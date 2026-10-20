@@ -106,8 +106,11 @@ export function writeConfig(config) {
   atomicWrite(configPath(), `${JSON.stringify({ appId: config.appId }, null, 2)}\n`, 0o600);
 }
 
+// Public Privy app id for this distribution. Not a secret. Env and ~/.grokwallet/config.json override it.
+export const PUBLIC_APP_ID = "cmvh5kyg300qy0gl01ww23ixy";
+
 export function resolveAppId() {
-  return appIdFromEnv() || readConfig().appId || "";
+  return appIdFromEnv() || readConfig().appId || PUBLIC_APP_ID;
 }
 
 export function requireAppId() {

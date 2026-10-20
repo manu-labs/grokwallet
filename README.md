@@ -46,7 +46,7 @@ Treat the machine that holds `~/.grokwallet` as able to spend, up to the cap and
 
 ## Quickstart for someone using the bot
 
-1. Import [`template/grokwallet.json`](template/grokwallet.json) as a Grok Bot. The publisher replaces `REPLACE_WITH_PRIVY_APP_ID` and confirms the approval page URL before distributing the template.
+1. Import [`template/grokwallet.json`](template/grokwallet.json) as a Grok Bot. The public Privy app id in that template is `cmvh5kyg300qy0gl01ww23ixy`. The approval page is `https://grokwallet.fun/`.
 2. When the bot asks, save a long passphrase as a masked secret named `GROKWALLET_PASSPHRASE`. Do not paste it into the chat.
 3. Open the approval link the bot shows. Check that the code matches. Log in with Privy and press Approve.
 4. Fund the addresses the bot shows. Incoming transfers do not need the agent.
@@ -57,7 +57,7 @@ The pinned install is release `v0.1.0`, checked with `SHA256SUMS`. Until that ta
 ## Quickstart for someone running the CLI
 
 ```sh
-export GROKWALLET_APP_ID="your-25-character-public-app-id"
+export GROKWALLET_APP_ID="cmvh5kyg300qy0gl01ww23ixy"
 export GROKWALLET_PASSPHRASE="the masked secret"
 node bot/bin/grokwallet.js login
 node bot/bin/grokwallet.js addresses
@@ -71,11 +71,11 @@ node bot/bin/grokwallet.js cap set --eth 0.01 --sol 0.05
 
 The owner hosts the approval page and the Privy app. Wallet owners do not do this.
 
-1. Create a Privy app, enable **CLI and agent access**, and copy the 25-character public app id into the `PRIVY_APP_ID` Actions variable.
-2. Create a Cloudflare Pages project named `grokwallet` (direct upload, production branch `main`) and store `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as Actions secrets.
+1. Enable **CLI and agent access** on the Privy app, and set the Actions variable `PRIVY_APP_ID` to `cmvh5kyg300qy0gl01ww23ixy`. That is the public app id. The Pages build reads it from the variable.
+2. Create a Cloudflare Pages project named `grokwallet` (direct upload, production branch `main`) and store `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as Actions secrets. The workflow uses that name when `CLOUDFLARE_PAGES_PROJECT` is empty, and the alias is `https://grokwallet.pages.dev`.
 3. Attach the apex domain `grokwallet.fun` (the zone has to be on Cloudflare DNS) and set the Privy verification URI to `https://grokwallet.fun/`.
-4. Tag `v0.1.0`. The workflow builds the page once, attests it, and uploads that tree to Pages. Add `IPFS_PINNING_TOKEN` only if you also want the IPFS copy.
-5. Replace `REPLACE_WITH_PRIVY_APP_ID` in the template, then share `template/grokwallet.json`. The approval page in the template is `https://grokwallet.fun/`.
+4. Tag `v0.1.0` when you are ready to publish. The workflow builds the page once, attests it, and uploads that tree to Pages. Add `IPFS_PINNING_TOKEN` only if you also want the IPFS copy.
+5. Share `template/grokwallet.json`. It already contains the public app id and `https://grokwallet.fun/`.
 
 Details, DNS, and rotation: [docs/HOSTING.md](docs/HOSTING.md). Checking the live files against the attestation: [docs/VERIFY.md](docs/VERIFY.md).
 
