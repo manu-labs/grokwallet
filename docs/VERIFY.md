@@ -58,13 +58,13 @@ diff -u approval-page.MANIFEST extracted.MANIFEST
 Check the custom domain and the Pages alias printed in the release:
 
 ```sh
-node scripts/verify-site.mjs https://wallet.example.com approval-page.MANIFEST
+node scripts/verify-site.mjs https://grokwallet.fun approval-page.MANIFEST
 node scripts/verify-site.mjs https://grokwallet.pages.dev approval-page.MANIFEST
 ```
 
 Use the alias from the release if the project name is not `grokwallet`. A matching line (`matched N files`) means every file Pages returned is byte-for-byte the attested build. A `FAIL hash` or `FAIL 404` line means that path differs from the manifest: stop trusting that host until you can explain the difference.
 
-The script requests each file at its path (`/index.html`, `/_next/static/...`). It does not send `user_code`. After the hashes match, open `https://wallet.example.com/?user_code=ABCD-EFGH` in a browser and confirm the code is still in the page address. That checks the query string, which the hash compare does not cover.
+The script requests each file at its path (`/index.html`, `/_next/static/...`). It does not send `user_code`. After the hashes match, open `https://grokwallet.fun/?user_code=ABCD-EFGH` in a browser and confirm the code is still in the page address. That checks the query string, which the hash compare does not cover.
 
 The footer of the page shows the commit baked in at build time. It should equal the attestation subject.
 

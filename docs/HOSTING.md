@@ -81,13 +81,23 @@ Create the project before the first publish. The workflow uses direct upload. It
 
 ### Custom domain
 
-Example: `wallet.example.com`.
+The approval page is the apex `grokwallet.fun`, served by this Pages project. The Privy verification URI is `https://grokwallet.fun/`.
 
-1. Open the Pages project → **Custom domains** → **Set up a custom domain**.
-2. Enter `wallet.example.com`.
-3. If the DNS zone is on this Cloudflare account, accept the record Cloudflare offers (a CNAME from `wallet` to `<project>.pages.dev`, proxied). If DNS is elsewhere, add the CNAME they display at your DNS host.
-4. Wait until the custom domain shows **Active** and the certificate is issued. Open `https://wallet.example.com/` and confirm the page loads.
-5. Replace `https://wallet.example.com/` in `template/grokwallet.json` (the getting-started skill) with this origin if you use a different name. The CLI prints the verification URI Privy returns, so once the dashboard matches this domain, the CLI output is the URL to show the owner.
+An apex custom domain has to be a zone on Cloudflare DNS, on the same account as the Pages project. Point the registrar nameservers at Cloudflare. Pages then creates a CNAME at the zone apex (`grokwallet.fun` → `<project>.pages.dev`). A DNS host outside Cloudflare cannot place a CNAME on the apex, so this name stays unattached while the zone lives elsewhere.
+
+https://developers.cloudflare.com/pages/configuration/custom-domains/
+
+1. Add `grokwallet.fun` to this Cloudflare account and set the registrar nameservers to the ones Cloudflare shows for that zone.
+2. Open the Pages project → **Custom domains** → **Set up a domain**.
+3. Enter `grokwallet.fun` and confirm the DNS record Cloudflare offers.
+4. Wait until the custom domain shows **Active** and the certificate is issued. Open `https://grokwallet.fun/` and confirm the page loads.
+5. The getting-started skill already names `https://grokwallet.fun/`. The CLI prints the verification URI Privy returns. Once the dashboard uses that origin, the printed URL is the one to show the owner.
+
+Optional `www` redirect: send `www.grokwallet.fun` to the apex so a `www` visit still reaches the verification URI, and keep `user_code` on the query string. In **Bulk Redirects**, add a list row with source `www.grokwallet.fun`, target `https://grokwallet.fun`, status `301`, and the parameters **Preserve query string**, **Subpath matching**, **Preserve path suffix**, and **Include subdomains**. Attach that list to a bulk redirect rule. In DNS, add a proxied `A` record named `www` to `192.0.2.1` (Cloudflare's documented placeholder address for a proxied redirect; traffic is answered by Cloudflare, not by that address). Check with `curl --head -i https://www.grokwallet.fun/?user_code=ABCD-EFGH` and confirm a 301 to `https://grokwallet.fun/?user_code=ABCD-EFGH`.
+
+https://developers.cloudflare.com/pages/how-to/www-redirect/
+
+The Privy verification URI stays `https://grokwallet.fun/`. Leave `www` off that setting.
 
 The workflow does not create the DNS record. Adding the domain is a dashboard step so the certificate and the zone stay under the account owner's control.
 
@@ -95,11 +105,11 @@ The workflow does not create the DNS record. Adding the domain is a dashboard st
 
 In the Privy dashboard, under **Authentication → Advanced**, set the verification URI to the Pages origin with a trailing slash:
 
-`https://wallet.example.com/`
+`https://grokwallet.fun/`
 
 Privy returns that value to the CLI as `verification_uri`. The CLI appends the user code and prints `verification_uri_complete`. Owners must land on this Pages host, because that is the origin whose files match the attested build.
 
-Use the `*.pages.dev` alias only as a temporary URI while the custom domain is still issuing a certificate. Replace it with the custom domain before you share the template. A public IPFS gateway is a poor verification URI: some gateways drop `?user_code=`, which the page needs.
+Use the `*.pages.dev` alias only as a temporary URI while the certificate for `grokwallet.fun` is still issuing. The template already names `https://grokwallet.fun/` as the approval page. A public IPFS gateway is a poor verification URI: some gateways drop `?user_code=`, which the page needs.
 
 ## 6. IPFS, optional
 
@@ -107,7 +117,7 @@ The pin runs only when the `IPFS_PINNING_TOKEN` secret is set. The same `dist/si
 
 When the secret is absent, the pin step is skipped, Pages still updates, and the summary says `IPFS: skipped`.
 
-To publish a content-addressed name beside the custom domain, add a TXT record on `_dnslink.wallet.example.com` with the value `dnslink=/ipfs/<CID>`. Update that record on every release that prints a new CID. DNSLink does not replace the verification URI. Compare the gateway to the release with [docs/VERIFY.md](VERIFY.md).
+To publish a content-addressed name beside the apex, add a TXT record on `_dnslink.grokwallet.fun` with the value `dnslink=/ipfs/<CID>`. Update that record on every release that prints a new CID. DNSLink does not replace the verification URI. Compare the gateway to the release with [docs/VERIFY.md](VERIFY.md).
 
 ## 7. Optional Privy spend policy
 

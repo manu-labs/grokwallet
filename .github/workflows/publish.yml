@@ -154,7 +154,7 @@ jobs:
               echo "- Gateway: https://gateway.pinata.cloud/ipfs/${CID}/"
             fi
             echo ""
-            echo "Set the Privy verification URI to the custom domain on this Pages project, for example \`https://wallet.example.com/\`."
+            echo "Set the Privy verification URI to \`https://grokwallet.fun/\`."
           } | tee -a "$GITHUB_STEP_SUMMARY" > dist/RELEASE_NOTES.md
           {
             echo ""

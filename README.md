@@ -73,9 +73,9 @@ The owner hosts the approval page and the Privy app. Wallet owners do not do thi
 
 1. Create a Privy app, enable **CLI and agent access**, and copy the 25-character public app id into the `PRIVY_APP_ID` Actions variable.
 2. Create a Cloudflare Pages project named `grokwallet` (direct upload, production branch `main`) and store `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as Actions secrets.
-3. Attach a custom domain such as `wallet.example.com`, then set that origin as the Privy verification URI.
+3. Attach the apex domain `grokwallet.fun` (the zone has to be on Cloudflare DNS) and set the Privy verification URI to `https://grokwallet.fun/`.
 4. Tag `v0.1.0`. The workflow builds the page once, attests it, and uploads that tree to Pages. Add `IPFS_PINNING_TOKEN` only if you also want the IPFS copy.
-5. Replace `REPLACE_WITH_PRIVY_APP_ID` and `https://wallet.example.com/` in the template, then share `template/grokwallet.json`.
+5. Replace `REPLACE_WITH_PRIVY_APP_ID` in the template, then share `template/grokwallet.json`. The approval page in the template is `https://grokwallet.fun/`.
 
 Details, DNS, and rotation: [docs/HOSTING.md](docs/HOSTING.md). Checking the live files against the attestation: [docs/VERIFY.md](docs/VERIFY.md).
 

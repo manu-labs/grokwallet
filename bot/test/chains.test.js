@@ -48,10 +48,10 @@ test("local spend cap blocks an over-cap send and prints a Privy policy document
 test("login stdout contains the user code and not the device code", () => {
   const deviceCode = "device-secret-value";
   const text = formatLoginPrompt({
-    verificationUriComplete: "https://grokwallet.example/?user_code=ABCD-1234",
+    verificationUriComplete: "https://grokwallet.fun/?user_code=ABCD-1234",
     userCode: "ABCD-1234",
   });
-  assert.match(text, /verification_uri_complete: https:\/\/grokwallet\.example\/\?user_code=ABCD-1234\n/);
+  assert.match(text, /verification_uri_complete: https:\/\/grokwallet\.fun\/\?user_code=ABCD-1234\n/);
   assert.match(text, /user_code: ABCD-1234\n/);
   assert.equal(text.includes(deviceCode), false);
 });
