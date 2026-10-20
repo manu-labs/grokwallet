@@ -29,7 +29,7 @@ sequenceDiagram
   CLI->>Privy: signed POST .../wallets/{id}/rpc
 ```
 
-The approval page is a static Next.js export. The release workflow builds it once, attests that output, and deploys those files to Cloudflare Pages. The same files are pinned to IPFS when a pinning token is configured, so anyone can compare the live site to the attested bytes. The CLI is a small Node program the bot runs on its own machine.
+The approval page is a static Next.js export. The release workflow builds it once, attests that output, and deploys those files to Cloudflare Pages. The export includes a `_headers` file so Pages sends a Content Security Policy and `X-Frame-Options: DENY`. The same files are pinned to IPFS when a pinning token is configured, so anyone can compare the live site to the attested bytes. The CLI is a small Node program the bot runs on its own machine.
 
 ## Trust model
 
