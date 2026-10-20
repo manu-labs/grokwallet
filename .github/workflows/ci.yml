@@ -53,6 +53,8 @@ jobs:
       - name: Typecheck
         working-directory: app
         run: npm run lint
+      - name: Header policy unit
+        run: node --test scripts/page-headers.test.mjs
       - name: Build twice and compare file hashes
         env:
           NEXT_TELEMETRY_DISABLED: "1"
@@ -60,6 +62,7 @@ jobs:
         run: |
           set -eu
           (cd app && npm run build)
+          node scripts/check-headers.mjs app/out
           node scripts/hash-tree.mjs app/out > /tmp/manifest-a.txt
           if grep -R "BEGIN PRIVATE KEY" app/out; then
             echo "build output contains a private key" >&2
@@ -67,6 +70,7 @@ jobs:
           fi
           rm -rf app/out app/.next
           (cd app && npm run build)
+          node scripts/check-headers.mjs app/out
           mkdir -p dist
           node scripts/hash-tree.mjs app/out > dist/approval-page.MANIFEST
           diff -u /tmp/manifest-a.txt dist/approval-page.MANIFEST

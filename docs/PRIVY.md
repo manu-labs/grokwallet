@@ -55,7 +55,9 @@ Wallet creation uses the React SDK, not the secret-requiring `POST /v1/wallets`:
 
 https://docs.privy.io/basics/react/advanced/automatic-wallet-creation
 
-`useCreateWallet` from `@privy-io/react-auth` and from `@privy-io/react-auth/solana` runs on Approve if a chain is still missing. The Solana entry imports `@solana/kit` and `@solana-program/memo`, so those are direct dependencies of `app/`.
+`useCreateWallet` from `@privy-io/react-auth` and from `@privy-io/react-auth/solana` runs on Approve if a chain is still missing. The Solana entry imports `@solana/kit` and `@solana-program/memo`, so those are direct dependencies of `app/`. The page does not set `loginMethods`, so the dashboard chooses email, social, or wallet login. It does not mount Telegram login or the funding kit.
+
+The production checklist's CSP and X-Frame items are delivered as Cloudflare Pages headers. The base directive list is https://docs.privy.io/security/implementation-guide/content-security-policy and the checklist text is https://docs.privy.io/security/implementation-guide/security-checklist. Sources added on top of that base policy, and why, are listed in [HOSTING.md](HOSTING.md).
 
 ## Policies
 

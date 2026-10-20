@@ -64,6 +64,22 @@ node scripts/verify-site.mjs https://grokwallet.pages.dev approval-page.MANIFEST
 
 Use the alias from the release if the project name is not `grokwallet`. A matching line (`matched N files`) means every file Pages returned is byte-for-byte the attested build. A `FAIL hash` or `FAIL 404` line means that path differs from the manifest: stop trusting that host until you can explain the difference.
 
+`approval-page.MANIFEST` includes `_headers`. That file is the Cloudflare Pages header rules (CSP, `X-Frame-Options: DENY`, and the other security headers). Check the built file before you trust the archive:
+
+```sh
+node scripts/check-headers.mjs /tmp/grokwallet-site/out
+```
+
+`check-headers` fails unless the file contains the Content Security Policy and `X-Frame-Options: DENY`, and unless its script hashes match the inline scripts in that same export. CI runs it after each of the two builds.
+
+On Cloudflare Pages, `/_headers` is configuration. A request for that path often returns 404. `scripts/verify-site.mjs` treats a 404 or 403 for `_headers` as a skipped config file and still compares every other path. An IPFS gateway serves `_headers` as a normal file, and that response is hashed like the rest. Either way, the headers visitors receive are on the page itself:
+
+```sh
+curl -sI https://grokwallet.fun/ | grep -iE 'content-security-policy|x-frame-options'
+```
+
+The CSP and `X-Frame-Options: DENY` should both be present. `frame-ancestors 'none'` is inside the CSP.
+
 The script requests each file at its path (`/index.html`, `/_next/static/...`). It does not send `user_code`. After the hashes match, open `https://grokwallet.fun/?user_code=ABCD-EFGH` in a browser and confirm the code is still in the page address. That checks the query string, which the hash compare does not cover.
 
 The footer of the page shows the commit baked in at build time. It should equal the attestation subject.

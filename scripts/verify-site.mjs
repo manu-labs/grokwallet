@@ -14,6 +14,7 @@ if (!base || !manifestPath) {
 const root = base.replace(/\/+$/, "");
 const lines = readFileSync(manifestPath, "utf8").split("\n").filter((line) => line.length > 0);
 let failed = 0;
+let skipped = 0;
 
 for (const line of lines) {
   const match = /^([0-9a-f]{64})  (.+)$/.exec(line);
@@ -33,6 +34,11 @@ for (const line of lines) {
     continue;
   }
   if (!response.ok) {
+    if (rel === "_headers" && (response.status === 404 || response.status === 403)) {
+      process.stderr.write("skip _headers: this host did not serve the Cloudflare Pages config file\n");
+      skipped += 1;
+      continue;
+    }
     process.stderr.write(`FAIL ${response.status} ${rel}\n`);
     failed += 1;
     continue;
@@ -50,4 +56,4 @@ if (failed > 0) {
   process.stderr.write(`${failed} of ${lines.length} file(s) did not match ${root}\n`);
   process.exit(1);
 }
-process.stdout.write(`matched ${lines.length} files at ${root}\n`);
+process.stdout.write(`matched ${lines.length - skipped - failed} files at ${root}\n`);

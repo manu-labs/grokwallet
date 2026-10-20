@@ -101,6 +101,39 @@ The Privy verification URI stays `https://grokwallet.fun/`. Leave `www` off that
 
 The workflow does not create the DNS record. Adding the domain is a dashboard step so the certificate and the zone stay under the account owner's control.
 
+### Security headers
+
+`npm run build` writes `app/out/_headers` after the Next.js export. Cloudflare Pages reads that file from the upload and attaches the headers to every path. The file is part of the attested archive and the manifest. Pages does not need to serve `/_headers` as a page. The IPFS copy still contains the file so its bytes can be compared.
+
+The policy is the base Content Security Policy from Privy's CSP guide, plus `X-Frame-Options: DENY`. `frame-ancestors 'none'` is in the CSP. Together they are the two production-checklist items (CSP for the embedded-wallet iframe, and X-Frame options). Privy's dashboard links the second item to an integration security guide. The current docs for that checklist are:
+
+- https://docs.privy.io/security/implementation-guide/content-security-policy
+- https://docs.privy.io/security/implementation-guide/security-checklist
+
+The base policy allows `https://auth.privy.io`, `https://*.rpc.privy.systems`, `https://explorer-api.walletconnect.com`, `https://verify.walletconnect.com`, `https://verify.walletconnect.org`, `https://challenges.cloudflare.com`, the WalletConnect relays, and `wss://www.walletlink.org`. This page also allows the following, because the installed SDK calls them and the page does not override them:
+
+| Source | Why it is in the policy |
+| --- | --- |
+| `wss://*.rpc.privy.systems` | `@privy-io/react-auth` 3.50.0 opens Solana RPC websockets. The guide lists the `https` wildcard only |
+| `https://api.mainnet-beta.solana.com`, `https://api.devnet.solana.com`, `https://api.testnet.solana.com` | The CSP guide says to add these when the app is on Solana and no RPC override is set. `useCreateWallet` for Solana does not set one |
+| `https://www.walletlink.org` | The SDK references the `https` origin. The guide lists the `wss` origin |
+| `https://echo.walletconnect.com` | `@walletconnect/core`, pulled in by the React SDK, posts WalletConnect events there. Wallet login is one of the methods this page can show |
+| `https://hcaptcha.com` and `https://*.hcaptcha.com` | The SDK ships `HCaptchaWrapper`. The guide lists these when the captcha provider is hCaptcha. Turnstile (`https://challenges.cloudflare.com`) stays in the policy because it is in the base configuration |
+
+`script-src` does not use `'unsafe-inline'` or `'unsafe-eval'`. It lists a sha256 for each Next.js inline bootstrap script in that export. `style-src` keeps `'unsafe-inline'` because the guide requires it and styled-components injects styles at runtime. `https://grokwallet.fun` is listed next to `'self'`. Telegram login and the funding kit are not mounted, so their hosts are not listed.
+
+The same file sets `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, a Permissions-Policy that turns off camera, microphone, geolocation, and payment, and `Strict-Transport-Security: max-age=31536000; includeSubDomains`. Passkeys stay available because `publickey-credentials-get` is left unset. `includeSubDomains` covers `www.grokwallet.fun` once that name is on HTTPS.
+
+After the first deploy, confirm the headers and then tick the two dashboard checkboxes:
+
+```sh
+curl -sI https://grokwallet.fun/ | grep -iE 'content-security-policy|x-frame-options|strict-transport-security|x-content-type-options|referrer-policy|permissions-policy'
+```
+
+Also add `https://grokwallet.fun` under **Configuration → App settings** allowed domains before production login. The security checklist says an origin that is not on that list is rejected.
+
+https://docs.privy.io/security/implementation-guide/security-checklist
+
 ## 5. Point Privy at the custom domain
 
 In the Privy dashboard, under **Authentication → Advanced**, set the verification URI to the Pages origin with a trailing slash:
