@@ -12,5 +12,6 @@ bot/node_modules/
 app/node_modules/
 app/.next/
 app/out/
+app/tsconfig.tsbuildinfo
 *.tmp
 .grokwallet/
