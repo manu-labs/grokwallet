@@ -1,6 +1,6 @@
 # Hosting
 
-This is the list for the person who owns the GitHub repo, the Privy app, and the Cloudflare account. End users do not do these steps. Nothing in this list belongs in a commit except the public app id, and only after you decide the repository is allowed to contain it. This template ships with the placeholder `REPLACE_WITH_PRIVY_APP_ID` instead.
+This is the list for the person who owns the GitHub repo, the Privy app, and the Cloudflare account. End users do not do these steps. The public Privy app id for this distribution is `cmvh5kyg300qy0gl01ww23ixy`. It is in the bot template and it is the CLI default. `.env.example` stays a generic placeholder.
 
 The approval page is a static export. The publish workflow builds it once, attests that output, uploads those exact files to Cloudflare Pages, and pins the same files to IPFS when a pinning token is configured. Cloudflare Pages is the host owners open. IPFS is the content-addressed copy used to check that host.
 
@@ -24,7 +24,7 @@ The React SDK rejects an app id that is not exactly 25 characters. Copy the id f
 
 | Value | Where it lives | Secret? |
 | --- | --- | --- |
-| Privy app id | GitHub Actions variable `PRIVY_APP_ID`. Also replace `REPLACE_WITH_PRIVY_APP_ID` in `template/grokwallet.json` before you share the template | No. It is in the browser bundle |
+| Privy app id | `cmvh5kyg300qy0gl01ww23ixy` in `template/grokwallet.json` and the CLI default. The Pages build reads the GitHub Actions variable `PRIVY_APP_ID`, which must be this same value | No. It is in the browser bundle |
 | Privy app client id, if the dashboard shows one | GitHub Actions variable `PRIVY_CLIENT_ID` | No |
 | Pages project name, if it is not `grokwallet` | GitHub Actions variable `CLOUDFLARE_PAGES_PROJECT` | No |
 | Privy app secret | Privy dashboard only | Yes. Do not put it on the bot, in the approval page, in GitHub Actions, or in git. This design does not use it |
@@ -37,12 +37,12 @@ The React SDK rejects an app id that is not exactly 25 characters. Copy the id f
 
 Repository variable:
 
-- `PRIVY_APP_ID` — the 25-character public app id
+- `PRIVY_APP_ID` — `cmvh5kyg300qy0gl01ww23ixy`
 
 Optional repository variables:
 
 - `PRIVY_CLIENT_ID` — public client id, or leave empty
-- `CLOUDFLARE_PAGES_PROJECT` — Pages project name. The workflow uses `grokwallet` when this is empty
+- `CLOUDFLARE_PAGES_PROJECT` — Pages project name. Leave it empty. The workflow default is `grokwallet`, and that project's alias is `https://grokwallet.pages.dev`
 
 Repository secrets:
 
@@ -67,7 +67,7 @@ If you need a different tag, change the tag in `template/grokwallet.json` in the
 
 Create the project before the first publish. The workflow uses direct upload. It does not connect the GitHub repo to Pages' built-in builds, so Pages does not compile the site a second time.
 
-1. In the Cloudflare dashboard, open **Workers & Pages → Create → Pages → Upload assets** (direct upload). Name the project `grokwallet`, or another single token that you also save as the `CLOUDFLARE_PAGES_PROJECT` repository variable. Set the production branch to `main`. The workflow deploys with `--branch=main`. A deployment on that branch is the production deployment.
+1. In the Cloudflare dashboard, open **Workers & Pages → Create → Pages → Upload assets** (direct upload). Name the project `grokwallet`. That matches the workflow default (`--project-name=grokwallet` when `CLOUDFLARE_PAGES_PROJECT` is empty), so the alias is `https://grokwallet.pages.dev`. Set the production branch to `main`. The workflow deploys with `--branch=main`. A deployment on that branch is the production deployment.
 2. You can create the empty project from a machine that already has Wrangler, with the same account:
 
    ```sh

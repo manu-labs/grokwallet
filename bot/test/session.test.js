@@ -3,7 +3,23 @@ import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { decryptJson, encryptJson, loadSession, saveSession, sessionMode } from "../src/session.js";
+import { decryptJson, encryptJson, loadSession, requireAppId, resolveAppId, saveSession, sessionMode } from "../src/session.js";
+
+test("defaults to the public app id and rejects the placeholder", () => {
+  const dir = mkdtempSync(join(tmpdir(), "grokwallet-app-"));
+  const previousHome = process.env.GROKWALLET_HOME;
+  const previousApp = process.env.GROKWALLET_APP_ID;
+  process.env.GROKWALLET_HOME = dir;
+  delete process.env.GROKWALLET_APP_ID;
+  assert.equal(resolveAppId(), "cmvh5kyg300qy0gl01ww23ixy");
+  assert.equal(requireAppId(), "cmvh5kyg300qy0gl01ww23ixy");
+  process.env.GROKWALLET_APP_ID = "REPLACE_WITH_PRIVY_APP_ID";
+  assert.throws(() => requireAppId());
+  if (previousHome === undefined) delete process.env.GROKWALLET_HOME;
+  else process.env.GROKWALLET_HOME = previousHome;
+  if (previousApp === undefined) delete process.env.GROKWALLET_APP_ID;
+  else process.env.GROKWALLET_APP_ID = previousApp;
+});
 
 test("encrypts a session so the token is not on disk", () => {
   const secret = "test-passphrase";

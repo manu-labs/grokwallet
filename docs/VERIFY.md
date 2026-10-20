@@ -31,7 +31,7 @@ git checkout <commit-from-the-attestation>
 # Node from .nvmrc (22.23.3)
 export NEXT_TELEMETRY_DISABLED=1
 export SOURCE_COMMIT=$(git rev-parse HEAD)
-export NEXT_PUBLIC_PRIVY_APP_ID="<app id printed in the release>"
+export NEXT_PUBLIC_PRIVY_APP_ID="cmvh5kyg300qy0gl01ww23ixy"
 # export NEXT_PUBLIC_PRIVY_CLIENT_ID=...   # only if the release used one
 cd app
 npm ci
