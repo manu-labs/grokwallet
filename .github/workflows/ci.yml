@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bot:
+    name: CLI lint and test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: bot/package-lock.json
+      - name: Install
+        working-directory: bot
+        run: npm ci
+      - name: Lint
+        working-directory: bot
+        run: npm run lint
+      - name: Test
+        working-directory: bot
+        run: npm test
+
+  app:
+    name: Approval page lint and reproducible build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install
+        working-directory: app
+        run: npm ci
+      - name: Typecheck
+        working-directory: app
+        run: npm run lint
+      - name: Build twice and compare file hashes
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -eu
+          (cd app && npm run build)
+          node scripts/hash-tree.mjs app/out > /tmp/manifest-a.txt
+          if grep -R "BEGIN PRIVATE KEY" app/out; then
+            echo "build output contains a private key" >&2
+            exit 1
+          fi
+          rm -rf app/out app/.next
+          (cd app && npm run build)
+          mkdir -p dist
+          node scripts/hash-tree.mjs app/out > dist/approval-page.MANIFEST
+          diff -u /tmp/manifest-a.txt dist/approval-page.MANIFEST
+      - name: Upload static export manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: approval-page-manifest
+          path: dist/approval-page.MANIFEST
+          if-no-files-found: error
