@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+bot/node_modules/
+app/node_modules/
+app/.next/
+app/out/
+app/tsconfig.tsbuildinfo
+*.tmp
+.grokwallet/

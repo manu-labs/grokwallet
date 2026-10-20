@@ -1,0 +1,364 @@
+import { CliError } from "./redact.js";
+import { loadSession, requireAppId, resolveAppId, saveSession, deleteSession, writeConfig } from "./session.js";
+import {
+  authenticateWallets,
+  formatLoginPrompt,
+  newIdempotencyKey,
+  pollDeviceToken,
+  refreshAccessToken,
+  requestDeviceCode,
+  walletRpc,
+} from "./privy.js";
+import { chainConfig, ethBalance, solBalance, solanaBlockhash } from "./balances.js";
+import { buildSolTransfer } from "./solana.js";
+import { assertWithinCap, formatCaps, normalizeCaps, policyDocuments, setCapAmount } from "./policy.js";
+import { ETH_DECIMALS, SOL_DECIMALS, formatUnits, parseUnits, toHexQuantity } from "./units.js";
+
+function requireFlag(flags, name) {
+  const value = flags[name];
+  if (value === undefined || value === true || value === "") {
+    throw new CliError(`missing --${name}`);
+  }
+  return String(value);
+}
+
+function requireSession() {
+  const session = loadSession();
+  if (!session?.accessToken || !session?.refreshToken) {
+    throw new CliError("not logged in. Run: grokwallet login");
+  }
+  return session;
+}
+
+function walletOf(session, chainType) {
+  const matches = (session.wallets || []).filter((wallet) => wallet.chainType === chainType);
+  if (matches.length === 0) {
+    throw new CliError(
+      `no ${chainType} wallet on this Privy account yet. Open the approval page while signed in so it can create one, then run addresses.`,
+    );
+  }
+  return matches[0];
+}
+
+function applyTokenResponse(session, payload) {
+  const expiresIn = Number(payload.expires_in || 900);
+  const next = {
+    ...session,
+    accessToken: payload.access_token,
+    refreshToken: payload.refresh_token,
+    accessExpiresAt: Date.now() + expiresIn * 1000,
+  };
+  saveSession(next);
+  return next;
+}
+
+async function ensureAccess(session) {
+  if (session.accessExpiresAt && session.accessExpiresAt > Date.now() + 60_000) return session;
+  const payload = await refreshAccessToken({
+    appId: session.appId,
+    refreshToken: session.refreshToken,
+  });
+  return applyTokenResponse(session, payload);
+}
+
+async function withSigningKey(session, fn) {
+  let current = await ensureAccess(session);
+  const authed = await authenticateWallets({
+    appId: current.appId,
+    accessToken: current.accessToken,
+  });
+  current = {
+    ...current,
+    wallets: authed.wallets.length > 0 ? authed.wallets : current.wallets || [],
+  };
+  saveSession(current);
+  try {
+    return await fn(current, authed.authorizationKey);
+  } catch (error) {
+    if (error instanceof CliError && error.exitCode === 401) {
+      const refreshed = applyTokenResponse(
+        current,
+        await refreshAccessToken({ appId: current.appId, refreshToken: current.refreshToken }),
+      );
+      const again = await authenticateWallets({
+        appId: refreshed.appId,
+        accessToken: refreshed.accessToken,
+      });
+      return fn(refreshed, again.authorizationKey);
+    }
+    throw error;
+  }
+}
+
+function printWallets(wallets) {
+  if (!wallets?.length) {
+    process.stdout.write("no wallets yet\n");
+    return;
+  }
+  for (const wallet of wallets) {
+    process.stdout.write(`${wallet.chainType} ${wallet.address} ${wallet.id}\n`);
+  }
+}
+
+export async function login() {
+  const appId = requireAppId();
+  writeConfig({ appId });
+  const device = await requestDeviceCode({ appId });
+  process.stdout.write(
+    formatLoginPrompt({
+      verificationUriComplete: device.verification_uri_complete,
+      userCode: device.user_code,
+    }),
+  );
+  process.stderr.write("waiting for approval\n");
+  const tokens = await pollDeviceToken({
+    appId,
+    deviceCode: device.device_code,
+    intervalSeconds: device.interval,
+    expiresInSeconds: device.expires_in,
+  });
+  let session = applyTokenResponse(
+    { v: 1, appId, wallets: [], caps: normalizeCaps() },
+    tokens,
+  );
+  const authed = await authenticateWallets({ appId, accessToken: session.accessToken });
+  session = { ...session, wallets: authed.wallets };
+  saveSession(session);
+  process.stdout.write("approved\n");
+  printWallets(session.wallets);
+}
+
+export function status() {
+  const appId = resolveAppId();
+  let session = null;
+  try {
+    session = loadSession();
+  } catch (error) {
+    if (error instanceof CliError && error.message.includes("decrypt")) throw error;
+    throw error;
+  }
+  if (!session) {
+    process.stdout.write(`logged_out\napp_id: ${appId || "unset"}\n`);
+    return;
+  }
+  process.stdout.write("logged_in\n");
+  process.stdout.write(`app_id: ${session.appId}\n`);
+  process.stdout.write(`access_expires_at: ${session.accessExpiresAt || "unknown"}\n`);
+  printWallets(session.wallets);
+  process.stdout.write(`${formatCaps(session.caps)}\n`);
+}
+
+export async function addresses() {
+  let session = requireSession();
+  session = await ensureAccess(session);
+  const authed = await authenticateWallets({ appId: session.appId, accessToken: session.accessToken });
+  session = { ...session, wallets: authed.wallets };
+  saveSession(session);
+  printWallets(session.wallets);
+}
+
+export async function balance(flags) {
+  const session = requireSession();
+  const names = flags.chain ? [String(flags.chain)] : ["ethereum", "base", "solana"];
+  for (const name of names) {
+    const chain = chainConfig(name);
+    if (chain.kind === "evm") {
+      const wallet = walletOf(session, "ethereum");
+      const wei = await ethBalance(wallet.address, chain.rpc);
+      process.stdout.write(`${name} ${wallet.address} ${formatUnits(wei, ETH_DECIMALS)} ETH\n`);
+    } else {
+      const wallet = walletOf(session, "solana");
+      const lamports = await solBalance(wallet.address, chain.rpc);
+      process.stdout.write(`${name} ${wallet.address} ${formatUnits(lamports, SOL_DECIMALS)} SOL\n`);
+    }
+  }
+}
+
+function requireYes(flags, summary) {
+  process.stdout.write(`${summary}\n`);
+  if (!flags.yes) {
+    throw new CliError("refusing without --yes. Show this summary in chat and wait for an explicit yes.", 2);
+  }
+}
+
+export async function sendEth(flags) {
+  const to = requireFlag(flags, "to");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(to)) throw new CliError("recipient must be a 0x Ethereum address");
+  const chainName = flags.chain ? String(flags.chain) : "ethereum";
+  if (chainName !== "ethereum" && chainName !== "base") throw new CliError("send-eth chain must be ethereum or base");
+  const chain = chainConfig(chainName);
+  const amount = parseUnits(requireFlag(flags, "amount"), ETH_DECIMALS);
+  const session = requireSession();
+  const from = walletOf(session, "ethereum");
+  assertWithinCap(session.caps, "eth", amount);
+  requireYes(
+    flags,
+    `send ${formatUnits(amount, ETH_DECIMALS)} ETH on ${chainName} from ${from.address} to ${to}`,
+  );
+  const body = {
+    method: "eth_sendTransaction",
+    caip2: chain.caip2,
+    chain_type: "ethereum",
+    params: {
+      transaction: {
+        to,
+        value: toHexQuantity(amount),
+        chain_id: chain.chainId,
+      },
+    },
+  };
+  const result = await withSigningKey(session, (current, authorizationKey) =>
+    walletRpc({
+      appId: current.appId,
+      accessToken: current.accessToken,
+      authorizationKey,
+      walletId: from.id,
+      body,
+      idempotencyKey: newIdempotencyKey(),
+    }),
+  );
+  const hash = result?.data?.hash || result?.hash || "";
+  process.stdout.write(`submitted ${chainName} ${hash}\n`);
+}
+
+export async function sendSol(flags) {
+  const to = requireFlag(flags, "to");
+  const amount = parseUnits(requireFlag(flags, "amount"), SOL_DECIMALS);
+  const session = requireSession();
+  const from = walletOf(session, "solana");
+  assertWithinCap(session.caps, "sol", amount);
+  requireYes(flags, `send ${formatUnits(amount, SOL_DECIMALS)} SOL from ${from.address} to ${to}`);
+  const chain = chainConfig("solana");
+  const recentBlockhash = await solanaBlockhash(chain.rpc);
+  const transaction = buildSolTransfer({
+    from: from.address,
+    to,
+    lamports: amount,
+    recentBlockhash,
+  });
+  const body = {
+    method: "signAndSendTransaction",
+    caip2: chain.caip2,
+    chain_type: "solana",
+    params: { transaction, encoding: "base64" },
+  };
+  const result = await withSigningKey(session, (current, authorizationKey) =>
+    walletRpc({
+      appId: current.appId,
+      accessToken: current.accessToken,
+      authorizationKey,
+      walletId: from.id,
+      body,
+      idempotencyKey: newIdempotencyKey(),
+    }),
+  );
+  const hash = result?.data?.hash || result?.hash || "";
+  process.stdout.write(`submitted solana ${hash}\n`);
+}
+
+export async function signMessage(flags) {
+  const chainName = requireFlag(flags, "chain");
+  const message = requireFlag(flags, "message");
+  if (message.length > 2000) throw new CliError("message is longer than 2000 characters");
+  const session = requireSession();
+  if (chainName === "ethereum") {
+    const wallet = walletOf(session, "ethereum");
+    requireYes(flags, `sign ethereum message from ${wallet.address}: ${message}`);
+    const body = {
+      method: "personal_sign",
+      chain_type: "ethereum",
+      params: { message, encoding: "utf-8" },
+    };
+    const result = await withSigningKey(session, (current, authorizationKey) =>
+      walletRpc({
+        appId: current.appId,
+        accessToken: current.accessToken,
+        authorizationKey,
+        walletId: wallet.id,
+        body,
+      }),
+    );
+    process.stdout.write(`signature ${result?.data?.signature || ""}\n`);
+    return;
+  }
+  if (chainName === "solana") {
+    const wallet = walletOf(session, "solana");
+    requireYes(flags, `sign solana message from ${wallet.address}: ${message}`);
+    const body = {
+      method: "signMessage",
+      chain_type: "solana",
+      params: { message: Buffer.from(message, "utf8").toString("base64"), encoding: "base64" },
+    };
+    const result = await withSigningKey(session, (current, authorizationKey) =>
+      walletRpc({
+        appId: current.appId,
+        accessToken: current.accessToken,
+        authorizationKey,
+        walletId: wallet.id,
+        body,
+      }),
+    );
+    process.stdout.write(`signature ${result?.data?.signature || ""}\n`);
+    return;
+  }
+  throw new CliError("sign-message chain must be ethereum or solana");
+}
+
+export function cap(rest, flags) {
+  const action = rest[0] || "show";
+  if (action === "policy") {
+    const session = requireSession();
+    const docs = policyDocuments(session.caps);
+    if (docs.length === 0) throw new CliError("set a cap before printing a Privy policy");
+    process.stdout.write(`${JSON.stringify(docs, null, 2)}\n`);
+    process.stderr.write(
+      "Privy policy creation (POST /v1/policies) requires the app secret, which this CLI does not have. These documents are for the app owner to install in the dashboard. The CLI cap is enforced locally.\n",
+    );
+    return;
+  }
+  if (action === "show") {
+    const session = loadSession();
+    process.stdout.write(`${formatCaps(session?.caps)}\n`);
+    return;
+  }
+  if (action === "clear") {
+    const session = requireSession();
+    saveSession({ ...session, caps: normalizeCaps() });
+    process.stdout.write("cap cleared\n");
+    return;
+  }
+  if (action === "set") {
+    const session = requireSession();
+    let caps = normalizeCaps(session.caps);
+    if (!flags.eth && !flags.sol) throw new CliError("pass --eth or --sol, or both");
+    if (flags.eth) caps = setCapAmount(caps, "eth", flags.eth);
+    if (flags.sol) caps = setCapAmount(caps, "sol", flags.sol);
+    saveSession({ ...session, caps });
+    process.stdout.write(`${formatCaps(caps)}\n`);
+    return;
+  }
+  throw new CliError("cap command must be show, set, clear, or policy");
+}
+
+export function logout() {
+  deleteSession();
+  process.stdout.write("logged_out\n");
+  process.stderr.write(
+    "Local tokens were deleted. To revoke the grant on Privy, open the approval page and revoke the session there.\n",
+  );
+}
+
+export const HELP = `grokwallet commands:
+  login
+  status
+  addresses
+  balance [--chain ethereum|base|solana]
+  send-eth --to 0x... --amount 0.01 [--chain ethereum|base] --yes
+  send-sol --to <address> --amount 0.01 --yes
+  sign-message --chain ethereum|solana --message <text> --yes
+  cap show|set|clear|policy [--eth 0.01] [--sol 0.01]
+  logout
+
+Stdout from login is only the verification URL and user code until approval finishes.
+Tokens and signing keys are never printed.
+`;
