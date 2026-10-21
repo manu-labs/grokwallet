@@ -54,7 +54,7 @@ Treat the machine that holds `~/.grokwallet` as able to spend, up to the cap and
 4. Fund the addresses the bot shows. Incoming transfers do not need the agent.
 5. The bot must show a summary and wait for an explicit yes before it sends or signs, unless you have set a standing rule inside the cap.
 
-The pinned install is release `v0.2.4`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
+The pinned install is release `v0.2.5`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
 
 ## Quickstart for someone running the CLI
 
@@ -104,13 +104,9 @@ Caps:
 
 ## WalletConnect
 
-A dapp that can pair with a wallet over WalletConnect v2 can use this CLI as the wallet. The published build does not embed a project id, unlike the public Privy app id. Create a project at [dashboard.reown.com](https://dashboard.reown.com) and export the 32-character hex project id:
+A dapp that can pair with a wallet over WalletConnect v2 can use this CLI as the wallet. The published build includes the public project id `bdfd32cda68514c6f0300c6f7a80320d`, the same way it includes the public Privy app id. That id is a relay client identifier, not an app secret. Leave both overrides unset to use it.
 
-```sh
-export GROKWALLET_WC_PROJECT_ID="your 32 hex characters"
-```
-
-`wcProjectId` in `~/.grokwallet/config.json` is the other place the CLI reads. The env var wins. Do not commit the id. It is a client identifier for the relay, not an app secret, and each owner should use their own so the relay quota is theirs.
+`GROKWALLET_WC_PROJECT_ID` overrides `wcProjectId` in `~/.grokwallet/config.json`, and either overrides the built-in id. A replacement id is 32 hex characters from [dashboard.reown.com](https://dashboard.reown.com). Keep an override in the environment or the local config.
 
 `wc pair` starts a background process that holds the relay connection and stores pairing keys under `~/.grokwallet/wc` with mode `0600`. Those keys are not the Ethereum key and not the Privy token. The foreground command signs, and only after `--yes`, through the same Privy path as `sign-message`, `sign-typed-data`, and `send-eth`.
 

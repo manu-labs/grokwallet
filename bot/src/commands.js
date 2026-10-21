@@ -546,7 +546,7 @@ A domain chainId such as Hyperliquid 0x66eee is not compared to the wallet chain
 wc pair keeps a background relay process. Each proposal and each request is approved by its own id.
 personal_sign, eth_signTypedData_v4, eth_sendTransaction, and wallet_sendCalls use the same summaries and caps as the matching commands.
 An ERC-20 transfer inside a WalletConnect send is capped per token. eth_sign and other raw-hash methods are refused.
-Set GROKWALLET_WC_PROJECT_ID to a 32-character hex project id from https://dashboard.reown.com. This build does not include one.
+A public WalletConnect project id is built in. GROKWALLET_WC_PROJECT_ID overrides wcProjectId in ~/.grokwallet/config.json, and either overrides the built-in id. Create one at https://dashboard.reown.com.
 Stdout from login is the verification URL, the user code, and a connector URL.
 The connector URL embeds only the public user code.
 Tokens, the passphrase, the device code, and signing keys are never printed.

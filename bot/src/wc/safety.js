@@ -73,13 +73,17 @@ export function assertPairingUri(uri) {
   return { topic: match[1] };
 }
 
+// Public WalletConnect project id for this distribution. A relay client id, not a secret.
+// GROKWALLET_WC_PROJECT_ID wins, then wcProjectId in ~/.grokwallet/config.json, then this default.
+export const PUBLIC_WC_PROJECT_ID = "bdfd32cda68514c6f0300c6f7a80320d";
+
 export function requireWcProjectId() {
   const fromEnv = process.env.GROKWALLET_WC_PROJECT_ID?.trim() || "";
   const fromConfig = String(readConfig().wcProjectId || "").trim();
-  const id = fromEnv || fromConfig;
+  const id = fromEnv || fromConfig || PUBLIC_WC_PROJECT_ID;
   if (!/^[0-9a-fA-F]{32}$/.test(id)) {
     throw new CliError(
-      "Set GROKWALLET_WC_PROJECT_ID to your WalletConnect project id, a 32-character hex value. Create one at https://dashboard.reown.com. This build does not include one. You can also set wcProjectId in ~/.grokwallet/config.json. Do not commit it.",
+      "GROKWALLET_WC_PROJECT_ID and wcProjectId in ~/.grokwallet/config.json must be a 32-character hex WalletConnect project id. Create one at https://dashboard.reown.com. Leave both unset to use the built-in public project id.",
     );
   }
   return id;

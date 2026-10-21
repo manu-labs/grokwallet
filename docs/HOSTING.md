@@ -55,14 +55,14 @@ CI (`.github/workflows/ci.yml`) runs on pull requests and on `main`. It does not
 
 Publish (`.github/workflows/publish.yml`) runs when you push a tag `v*` and when you start it by hand. It builds the page once with `PRIVY_APP_ID`, packs `app/out` into `grokwallet-app.tar.gz`, attests that archive (and the CLI archive, the manifest, and `SHA256SUMS`) with `actions/attest-build-provenance`, extracts the attested archive, and uploads that directory with `cloudflare/wrangler-action` (`pages deploy`, Wrangler `4.151.3`). The command runs from the repo root, so Wrangler also uploads the `functions/` directory next to `dist/site`. Those functions are not inside the attested tarball. When `IPFS_PINNING_TOKEN` is set, it pins the static directory only and writes the CID to the job summary. A tag also opens a GitHub release. The job stops before the build if either Cloudflare secret is missing. It does not read `GROKWALLET_OAUTH_HMAC_KEY`; that value lives on the Pages project.
 
-The bot template tells the agent to install tag `v0.2.4`. Publish that tag from the commit whose template you are distributing:
+The bot template tells the agent to install tag `v0.2.5`. Publish that tag from the commit whose template you are distributing:
 
 ```sh
-git tag v0.2.4
-git push origin v0.2.4
+git tag v0.2.5
+git push origin v0.2.5
 ```
 
-Leave tags `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.2.2`, and `v0.2.3` where they are. Do not move `v0.2.2` or `v0.2.3`. Pushing the tag runs `.github/workflows/publish.yml`. Merging a pull request does not. The workflow packs `dist/grokwallet-bot.tar.gz` and `dist/SHA256SUMS` and, only when the ref is a tag, uploads them to the GitHub release. A manual `workflow_dispatch` run deploys the page and builds the archives, and it does not open the GitHub release.
+Leave tags `v0.1.0`, `v0.2.0`, `v0.2.1`, `v0.2.2`, `v0.2.3`, and `v0.2.4` where they are. Do not move `v0.2.2`, `v0.2.3`, or `v0.2.4`. Pushing the tag runs `.github/workflows/publish.yml`. Merging a pull request does not. The workflow packs `dist/grokwallet-bot.tar.gz` and `dist/SHA256SUMS` and, only when the ref is a tag, uploads them to the GitHub release. A manual `workflow_dispatch` run deploys the page and builds the archives, and it does not open the GitHub release.
 
 If you need a different tag, change the tag in `template/grokwallet.json` in the same commit, then tag that commit.
 
