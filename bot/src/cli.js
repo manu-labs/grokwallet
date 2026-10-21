@@ -1,5 +1,18 @@
 import { CliError } from "./redact.js";
-import { addresses, balance, cap, HELP, login, logout, sendEth, sendSol, signMessage, status } from "./commands.js";
+import {
+  addresses,
+  balance,
+  cap,
+  HELP,
+  login,
+  logout,
+  sendErc20,
+  sendEth,
+  sendSol,
+  signMessage,
+  signTypedData,
+  status,
+} from "./commands.js";
 
 export function parseArgs(argv) {
   const positionals = [];
@@ -17,17 +30,26 @@ export function parseArgs(argv) {
     const body = arg.slice(2);
     const eq = body.indexOf("=");
     if (eq !== -1) {
-      flags[body.slice(0, eq)] = body.slice(eq + 1);
+      setFlag(flags, body.slice(0, eq), body.slice(eq + 1));
       continue;
     }
     const next = argv[i + 1];
-    if (next === undefined || next.startsWith("--")) flags[body] = true;
+    if (next === undefined || next.startsWith("--")) setFlag(flags, body, true);
     else {
-      flags[body] = next;
+      setFlag(flags, body, next);
       i += 1;
     }
   }
   return { command: positionals[0], rest: positionals.slice(1), flags };
+}
+
+function setFlag(flags, key, value) {
+  if (!Object.prototype.hasOwnProperty.call(flags, key)) {
+    flags[key] = value;
+    return;
+  }
+  const current = flags[key];
+  flags[key] = Array.isArray(current) ? current.concat([value]) : [current, value];
 }
 
 export async function main(argv) {
@@ -52,11 +74,17 @@ export async function main(argv) {
     case "send-eth":
       await sendEth(flags);
       return 0;
+    case "send-erc20":
+      await sendErc20(flags);
+      return 0;
     case "send-sol":
       await sendSol(flags);
       return 0;
     case "sign-message":
       await signMessage(flags);
+      return 0;
+    case "sign-typed-data":
+      await signTypedData(flags);
       return 0;
     case "cap":
       cap(rest, flags);

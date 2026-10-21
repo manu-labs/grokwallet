@@ -133,7 +133,7 @@ async function handleMcp(request, url, env, now, canonical) {
       return rpc(id, {
         protocolVersion,
         capabilities: { tools: {} },
-        serverInfo: { name: "grokwallet-link", version: "0.2.2" },
+        serverInfo: { name: "grokwallet-link", version: "0.2.3" },
         instructions:
           "This connector only opens the approval page. Wallet actions stay on the local grokwallet CLI. This server does not receive wallet credentials.",
       });

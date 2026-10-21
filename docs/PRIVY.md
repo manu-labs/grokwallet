@@ -1,6 +1,6 @@
 # Privy API contract
 
-Checked against Privy's docs and the public OpenAPI document `https://api.privy.io/v1/openapi.json` on 20 October 2026. No call in development used a real app id, app secret, or user token.
+Checked against Privy's docs on 21 October 2026, and against the public OpenAPI document `https://api.privy.io/v1/openapi.json` on 20 October 2026. No call in development used a real app id, app secret, or user token. `eth_signTypedData_v4` and Arbitrum `eth_sendTransaction` were checked against the doc pages linked below, not against a live wallet.
 
 This repo does not use [`@privy-io/agent-wallet-cli`](https://docs.privy.io/recipes/agent-integrations/agent-cli). That CLI logs into Privy's agent sandbox at `https://agents.privy.io` and stores a session for Privy's own app. GrokWallet has to run against the publisher's Privy app, with a publisher-hosted approval page and no app secret on the bot. The device flow below is the one Privy documents for that case: https://docs.privy.io/recipes/agent-integrations/agent-authorization
 
@@ -40,12 +40,15 @@ The decrypted key is a PKCS#8 string. `wallet-auth:` and `wallet-api:` prefixes 
 
 Taken from OpenAPI, which marks `additionalProperties: false`. The recipe's examples omit some of these fields.
 
-- `eth_sendTransaction` requires `caip2` and `params.transaction`. Value is a hex quantity because wei can exceed a JSON number. `chain_id` is `1` or `8453` (Base). https://docs.privy.io/api-reference/wallets/ethereum/eth-send-transaction
+- `eth_sendTransaction` requires `caip2` and `params.transaction`. Value is a hex quantity because wei can exceed a JSON number. `chain_id` follows the selected chain: `1` (Ethereum), `8453` (Base), `42161` (Arbitrum), or `421614` (Arbitrum Sepolia). `params.transaction.data` is optional even-length hex for a contract call. https://docs.privy.io/api-reference/wallets/ethereum/eth-send-transaction
+- Privy lists Arbitrum and Arbitrum Sepolia as supported EVM networks with a Privy RPC. https://docs.privy.io/basics/react/advanced/configuring-evm-networks
+- `eth_signTypedData_v4` sends `params.typed_data` with `domain`, `types`, `primary_type`, and `message`. The CLI also sends `chain_type: "ethereum"`, matching `personal_sign` in this repo and `signTypedData` in `@privy-io/node`, which sets that field. The REST example omits it. `caip2` is omitted on purpose: it is documented as required only with `signature_options`, and a Hyperliquid domain `chainId` of `0x66eee` (421614) is not the wallet's Ethereum chain. `types` is forwarded unchanged. The CLI does not insert `EIP712Domain`, because the chain id type (`uint256` versus the `uint160` in Privy's sample) changes the hash. https://docs.privy.io/api-reference/wallets/ethereum/eth-signtypeddata-v4
 - `personal_sign` requires `params.message` and `params.encoding` (`utf-8`). https://docs.privy.io/recipes/agent-integrations/agent-authorization
 - `signAndSendTransaction` requires `caip2` (`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`) and a base64 legacy transaction. https://docs.privy.io/api-reference/wallets/solana/sign-and-send-transaction
 - `signMessage` on Solana requires `params.message` as base64 and `params.encoding: "base64"`.
+- ERC-20 transfer is not a separate Privy method. `send-erc20` builds `transfer(address,uint256)` calldata (`0xa9059cbb`) and submits it with `eth_sendTransaction`, `value` `0x0`, and `to` set to the token contract. `decimals()` is read with `eth_call` data `0x313ce567` on the chain's public RPC, not from Privy.
 
-Balances are not read from Privy. `GET /v1/wallets/{id}/balance` requires the app secret. The CLI calls public RPCs: `eth_getBalance`, and Solana `getBalance`. Defaults are `https://ethereum.publicnode.com`, `https://mainnet.base.org`, and `https://api.mainnet-beta.solana.com`.
+Balances are not read from Privy. `GET /v1/wallets/{id}/balance` requires the app secret. The CLI calls public RPCs: `eth_getBalance`, `eth_call` for ERC-20 metadata, and Solana `getBalance`. Defaults are `https://ethereum.publicnode.com`, `https://mainnet.base.org`, `https://arb1.arbitrum.io/rpc`, `https://sepolia-rollup.arbitrum.io/rpc`, and `https://api.mainnet-beta.solana.com`.
 
 ## Approval page
 
@@ -75,4 +78,6 @@ The user-owned device flow, as documented, does not give the bot a way to create
 - That `POST /api/oauth/v2/device_authorization` and `POST /api/oauth/v2/wallets/authenticate` and `POST /api/oauth/v2/wallets/{id}/rpc` are deployed as the recipe describes. They are not paths in the OpenAPI document fetched from `https://api.privy.io/v1/openapi.json`.
 - That omitting `privy-grant-type` from the signature payload is what the server checks.
 - HPKE against a real Privy response. The unit test seals and opens with the same library.
+- A live `eth_signTypedData_v4` or `eth_sendTransaction` on Arbitrum. The CLI shapes match the doc pages above. Unit tests use a fake `fetch`.
+- That Privy's enclave accepts a Hyperliquid payload whose `types` omit `EIP712Domain`. The CLI forwards `types` unchanged so it does not guess `uint256` versus `uint160`.
 - Pinata, Cloudflare Pages, the GitHub attestation, and a real device approval. Those need the owner's accounts. The publish workflow is written to upload the attested `dist/site` tree and to skip the pin when `IPFS_PINNING_TOKEN` is unset. That path was not executed against Cloudflare or Pinata.

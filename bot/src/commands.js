@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { CliError } from "./redact.js";
 import { loadSession, requireAppId, resolveAppId, saveSession, deleteSession, writeConfig } from "./session.js";
 import {
@@ -9,18 +10,65 @@ import {
   requestDeviceCode,
   walletRpc,
 } from "./privy.js";
-import { chainConfig, ethBalance, solBalance, solanaBlockhash } from "./balances.js";
+import { chainConfig, chainNames, ethBalance, solBalance, solanaBlockhash } from "./balances.js";
 import { connectorUrlForUserCode } from "./home.js";
 import { buildSolTransfer } from "./solana.js";
-import { assertWithinCap, formatCaps, normalizeCaps, policyDocuments, setCapAmount } from "./policy.js";
-import { ETH_DECIMALS, SOL_DECIMALS, formatUnits, parseUnits, toHexQuantity } from "./units.js";
+import {
+  assertWithinCap,
+  assertWithinTokenCap,
+  formatCaps,
+  normalizeCaps,
+  policyDocuments,
+  setCapAmount,
+  setTokenCap,
+  tokenCapKey,
+} from "./policy.js";
+import { ETH_DECIMALS, SOL_DECIMALS, formatUnits, parseUnits } from "./units.js";
+import {
+  buildEthSendBody,
+  encodeErc20Transfer,
+  erc20SpendSelector,
+  normalizeCalldata,
+  readErc20Decimals,
+  readErc20Symbol,
+  requireAddress,
+  summarizeErc20,
+  summarizeEthSend,
+} from "./erc20.js";
+import { resolveMessage, summarizeMessage } from "./message.js";
+import { buildTypedDataBody, loadTypedData, summarizeTypedData } from "./typed-data.js";
 
 function requireFlag(flags, name) {
   const value = flags[name];
   if (value === undefined || value === true || value === "") {
     throw new CliError(`missing --${name}`);
   }
+  if (Array.isArray(value)) throw new CliError(`pass --${name} once`);
   return String(value);
+}
+
+function flagList(flags, name) {
+  const value = flags[name];
+  if (value === undefined) return [];
+  const items = Array.isArray(value) ? value : [value];
+  if (items.some((item) => item === true || item === "")) throw new CliError(`missing --${name} value`);
+  return items.map(String);
+}
+
+function readUtf8File(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    throw new CliError(`could not read ${path}`);
+  }
+}
+
+function readStdinUtf8() {
+  try {
+    return readFileSync(0, "utf8");
+  } catch {
+    throw new CliError("could not read the message from stdin");
+  }
 }
 
 function requireSession() {
@@ -184,44 +232,110 @@ function requireYes(flags, summary) {
   }
 }
 
-export async function sendEth(flags) {
-  const to = requireFlag(flags, "to");
-  if (!/^0x[0-9a-fA-F]{40}$/.test(to)) throw new CliError("recipient must be a 0x Ethereum address");
+export function prepareEthSend(flags) {
+  const to = requireAddress(requireFlag(flags, "to"), "recipient");
   const chainName = flags.chain ? String(flags.chain) : "ethereum";
-  if (chainName !== "ethereum" && chainName !== "base") throw new CliError("send-eth chain must be ethereum or base");
   const chain = chainConfig(chainName);
-  const amount = parseUnits(requireFlag(flags, "amount"), ETH_DECIMALS);
+  if (chain.kind !== "evm") throw new CliError("send-eth chain must be an EVM chain");
+  const data = flags.data === undefined ? null : normalizeCalldata(requireFlag(flags, "data"));
+  if (data && erc20SpendSelector(data)) {
+    throw new CliError(
+      "this calldata is an ERC-20 transfer or transferFrom. Use send-erc20 so the per-token cap applies.",
+    );
+  }
+  const amount = parseUnits(requireFlag(flags, "amount"), ETH_DECIMALS, { allowZero: Boolean(data) });
+  const body = buildEthSendBody({
+    caip2: chain.caip2,
+    to,
+    valueWei: amount,
+    chainId: chain.chainId,
+    data,
+  });
+  return { to, chain, chainName, amount, amountText: formatUnits(amount, ETH_DECIMALS), data, body };
+}
+
+export async function sendEth(flags) {
+  const prepared = prepareEthSend(flags);
   const session = requireSession();
   const from = walletOf(session, "ethereum");
-  assertWithinCap(session.caps, "eth", amount);
+  assertWithinCap(session.caps, "eth", prepared.amount);
   requireYes(
     flags,
-    `send ${formatUnits(amount, ETH_DECIMALS)} ETH on ${chainName} from ${from.address} to ${to}`,
+    summarizeEthSend({
+      chainName: prepared.chainName,
+      from: from.address,
+      to: prepared.to,
+      amountText: prepared.amountText,
+      data: prepared.data,
+    }),
   );
-  const body = {
-    method: "eth_sendTransaction",
-    caip2: chain.caip2,
-    chain_type: "ethereum",
-    params: {
-      transaction: {
-        to,
-        value: toHexQuantity(amount),
-        chain_id: chain.chainId,
-      },
-    },
-  };
   const result = await withSigningKey(session, (current, authorizationKey) =>
     walletRpc({
       appId: current.appId,
       accessToken: current.accessToken,
       authorizationKey,
       walletId: from.id,
-      body,
+      body: prepared.body,
       idempotencyKey: newIdempotencyKey(),
     }),
   );
   const hash = result?.data?.hash || result?.hash || "";
-  process.stdout.write(`submitted ${chainName} ${hash}\n`);
+  process.stdout.write(`submitted ${prepared.chainName} ${hash}\n`);
+}
+
+export async function prepareErc20Send(flags, { caps, fetchImpl = fetch } = {}) {
+  const chainName = requireFlag(flags, "chain");
+  const chain = chainConfig(chainName);
+  if (chain.kind !== "evm") throw new CliError("send-erc20 chain must be an EVM chain");
+  const token = requireAddress(requireFlag(flags, "token"), "token");
+  const to = requireAddress(requireFlag(flags, "to"), "recipient");
+  const amountText = requireFlag(flags, "amount");
+  const key = tokenCapKey(chain.name, token);
+  if (!normalizeCaps(caps).tokens[key]) assertWithinTokenCap(caps, chain.name, token, 0n, 0);
+  const decimals = await readErc20Decimals(chain.rpc, token, fetchImpl);
+  const raw = parseUnits(amountText, decimals);
+  const capHuman = assertWithinTokenCap(caps, chain.name, token, raw, decimals);
+  const symbol = await readErc20Symbol(chain.rpc, token, fetchImpl);
+  const data = encodeErc20Transfer(to, raw);
+  const body = buildEthSendBody({
+    caip2: chain.caip2,
+    to: token,
+    valueWei: 0n,
+    chainId: chain.chainId,
+    data,
+  });
+  return {
+    chain,
+    chainName,
+    token,
+    to,
+    amountText: formatUnits(raw, decimals),
+    symbol,
+    decimals,
+    raw,
+    capHuman,
+    data,
+    body,
+  };
+}
+
+export async function sendErc20(flags) {
+  const session = requireSession();
+  const from = walletOf(session, "ethereum");
+  const prepared = await prepareErc20Send(flags, { caps: session.caps });
+  requireYes(flags, summarizeErc20({ ...prepared, from: from.address }));
+  const result = await withSigningKey(session, (current, authorizationKey) =>
+    walletRpc({
+      appId: current.appId,
+      accessToken: current.accessToken,
+      authorizationKey,
+      walletId: from.id,
+      body: prepared.body,
+      idempotencyKey: newIdempotencyKey(),
+    }),
+  );
+  const hash = result?.data?.hash || result?.hash || "";
+  process.stdout.write(`submitted ${prepared.chainName} ${hash}\n`);
 }
 
 export async function sendSol(flags) {
@@ -261,12 +375,11 @@ export async function sendSol(flags) {
 
 export async function signMessage(flags) {
   const chainName = requireFlag(flags, "chain");
-  const message = requireFlag(flags, "message");
-  if (message.length > 2000) throw new CliError("message is longer than 2000 characters");
+  const message = resolveMessage(flags, { readFile: readUtf8File, readStdin: readStdinUtf8 });
   const session = requireSession();
   if (chainName === "ethereum") {
     const wallet = walletOf(session, "ethereum");
-    requireYes(flags, `sign ethereum message from ${wallet.address}: ${message}`);
+    requireYes(flags, summarizeMessage("ethereum", wallet.address, message));
     const body = {
       method: "personal_sign",
       chain_type: "ethereum",
@@ -286,7 +399,7 @@ export async function signMessage(flags) {
   }
   if (chainName === "solana") {
     const wallet = walletOf(session, "solana");
-    requireYes(flags, `sign solana message from ${wallet.address}: ${message}`);
+    requireYes(flags, summarizeMessage("solana", wallet.address, message));
     const body = {
       method: "signMessage",
       chain_type: "solana",
@@ -307,15 +420,46 @@ export async function signMessage(flags) {
   throw new CliError("sign-message chain must be ethereum or solana");
 }
 
+export async function signTypedData(flags) {
+  const chainName = requireFlag(flags, "chain");
+  if (chainName !== "ethereum") {
+    throw new CliError(
+      "sign-typed-data --chain must be ethereum. The domain chainId is taken from the typed data and is not checked against a configured chain.",
+    );
+  }
+  const typed = loadTypedData(requireFlag(flags, "data"), {
+    readFile: readUtf8File,
+    readStdin: readStdinUtf8,
+  });
+  const session = requireSession();
+  const wallet = walletOf(session, "ethereum");
+  requireYes(flags, summarizeTypedData(typed, wallet.address));
+  const body = buildTypedDataBody(typed);
+  const result = await withSigningKey(session, (current, authorizationKey) =>
+    walletRpc({
+      appId: current.appId,
+      accessToken: current.accessToken,
+      authorizationKey,
+      walletId: wallet.id,
+      body,
+    }),
+  );
+  process.stdout.write(`signature ${result?.data?.signature || ""}\n`);
+}
+
 export function cap(rest, flags) {
   const action = rest[0] || "show";
   if (action === "policy") {
     const session = requireSession();
     const docs = policyDocuments(session.caps);
-    if (docs.length === 0) throw new CliError("set a cap before printing a Privy policy");
+    if (docs.length === 0) {
+      throw new CliError(
+        "set an ETH or SOL cap before printing a Privy policy. ERC-20 caps are enforced by this CLI only and are not part of that document.",
+      );
+    }
     process.stdout.write(`${JSON.stringify(docs, null, 2)}\n`);
     process.stderr.write(
-      "Privy policy creation (POST /v1/policies) requires the app secret, which this CLI does not have. These documents are for the app owner to install in the dashboard. The CLI cap is enforced locally.\n",
+      "Privy policy creation (POST /v1/policies) requires the app secret, which this CLI does not have. These documents are for the app owner to install in the dashboard. The CLI cap is enforced locally. ERC-20 caps are not in these documents.\n",
     );
     return;
   }
@@ -333,9 +477,13 @@ export function cap(rest, flags) {
   if (action === "set") {
     const session = requireSession();
     let caps = normalizeCaps(session.caps);
-    if (!flags.eth && !flags.sol) throw new CliError("pass --eth or --sol, or both");
+    const tokens = flagList(flags, "token");
+    if (!flags.eth && !flags.sol && tokens.length === 0) {
+      throw new CliError("pass --eth, --sol, or --token chain:0xaddress=amount");
+    }
     if (flags.eth) caps = setCapAmount(caps, "eth", flags.eth);
     if (flags.sol) caps = setCapAmount(caps, "sol", flags.sol);
+    for (const spec of tokens) caps = setTokenCap(caps, spec);
     saveSession({ ...session, caps });
     process.stdout.write(`${formatCaps(caps)}\n`);
     return;
@@ -351,18 +499,29 @@ export function logout() {
   );
 }
 
+const evmChains = chainNames("evm").join("|");
+const balanceChains = chainNames().join("|");
+
 export const HELP = `grokwallet commands:
   login
   status
   addresses
-  balance [--chain ethereum|base|solana]
-  send-eth --to 0x... --amount 0.01 [--chain ethereum|base] --yes
+  balance [--chain ${balanceChains}]
+  send-eth --to 0x... --amount 0.01 [--chain ${evmChains}] [--data 0x...] --yes
+  send-erc20 --chain ${evmChains} --token 0x... --to 0x... --amount 10 --yes
   send-sol --to <address> --amount 0.01 --yes
-  sign-message --chain ethereum|solana --message <text> --yes
-  cap show|set|clear|policy [--eth 0.01] [--sol 0.01]
+  sign-message --chain ethereum|solana (--message <text> | --message-file <path|->) --yes
+  sign-typed-data --chain ethereum --data <json|@file> --yes
+  cap show|set|clear|policy [--eth 0.01] [--sol 0.01] [--token chain:0xaddress=amount]
   logout
 
+send-eth checks native ETH value against the ETH cap. --amount 0 is allowed only with --data.
+send-erc20 reads token decimals from the contract and refuses unless a cap is set for that chain and token.
+An ERC-20 transfer or transferFrom in send-eth --data is refused; use send-erc20.
+sign-typed-data prints domain.chainId, verifyingContract, primaryType, and message, then asks Privy for eth_signTypedData_v4.
+A domain chainId such as Hyperliquid 0x66eee is not compared to the wallet chain.
+--message-file and --message-file - keep the file or stdin bytes, including line breaks.
 Stdout from login is the verification URL, the user code, and a connector URL.
 The connector URL embeds only the public user code.
-Tokens, the device code, and signing keys are never printed.
+Tokens, the passphrase, the device code, and signing keys are never printed.
 `;

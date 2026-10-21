@@ -51,6 +51,12 @@ The approval page keeps `Content-Security-Policy` with `frame-ancestors 'none'` 
 
 `GROKWALLET_OAUTH_HMAC_KEY` is a Pages secret. A person who can read it can mint Connect-card tokens. Those tokens still cannot call Privy.
 
+## CLI spend limits
+
+`send-eth` checks the native ETH value against the local ETH cap, including when `--data` is set. `send-erc20` reads `decimals()` from the token and refuses to broadcast unless `cap set --token chain:0xaddress=amount` was set for that chain and contract, and the amount is within it. ERC-20 `transfer` and `transferFrom` selectors in `send-eth --data` are refused so they cannot skip that cap. Other calldata is not amount-capped; the summary shows the selector and the data, and `--yes` is still required.
+
+`sign-message` and `sign-typed-data` do not transfer a balance. They print the exact message or the typed-data domain, primary type, and message, and they refuse to sign without `--yes`. A typed-data signature can approve another signer. Hyperliquid `approveAgent` is one case: its domain `chainId` is `0x66eee`, which is not Ethereum. The ETH cap does not interpret that signature.
+
 ## Scope
 
 In scope: the `grokwallet` CLI, the static approval page, the Pages Functions under `functions/`, the GitHub workflows, and the bot template in this repository.
