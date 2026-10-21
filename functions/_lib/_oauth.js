@@ -6,15 +6,9 @@ const SCOPE = "link_status";
 
 export const USER_CODE = /^[A-Za-z0-9]{4,16}(?:-[A-Za-z0-9]{4,16})?$/;
 
-// Grok Bot's dynamic client registration sends these callbacks (Cursor forum,
-// October 2026). Any other URI is rejected so /oauth/authorize cannot be an
-// open redirect. Loopback allows the desktop port to vary; the path stays
-// /callback.
-const EXACT_REDIRECTS = new Set([
-  "cursor://anysphere.cursor-mcp/oauth/callback",
-  "https://www.cursor.com/agents/mcp/oauth/callback",
-  "https://www.cursor.com/bot/mcp/oauth/callback",
-]);
+// Registration accepts any https URI, and http only for localhost or
+// 127.0.0.1. /authorize then requires an exact match against the URIs stored
+// in the signed client id, so a registered client cannot be sent elsewhere.
 
 const CLIENT_TTL = 30 * 24 * 60 * 60;
 const TXN_TTL = 10 * 60;
@@ -47,16 +41,16 @@ export function isPublicHost(hostname) {
 }
 
 export function isAllowedRedirect(uri) {
-  if (typeof uri !== "string" || uri.length < 8 || uri.length > 200) return false;
-  if (/[\s#\\@]/.test(uri) || uri.includes("%")) return false;
-  if (EXACT_REDIRECTS.has(uri)) return true;
+  if (typeof uri !== "string" || uri.length < 8 || uri.length > 512) return false;
+  if (/[\s#\\]/.test(uri) || uri.includes("..")) return false;
   let url;
   try {
     url = new URL(uri);
   } catch {
     return false;
   }
-  if (url.origin === "null" || url.username || url.password || url.hash || url.search) return false;
+  if (url.username || url.password || url.hash || url.origin === "null" || !url.hostname) return false;
+  if (url.protocol === "https:") return true;
   if (url.protocol !== "http:") return false;
   const host = url.hostname.toLowerCase();
   if (host !== "localhost" && host !== "127.0.0.1") return false;
@@ -64,7 +58,7 @@ export function isAllowedRedirect(uri) {
     const port = Number(url.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
   }
-  return url.pathname === "/callback" || url.pathname === "/callback/";
+  return true;
 }
 
 function decodeUserCode(raw) {
@@ -152,7 +146,7 @@ async function signPayload(payload, secret) {
 }
 
 export async function readPayload(token, secret, typ, now) {
-  if (typeof token !== "string" || token.length < 20 || token.length > 4096) return null;
+  if (typeof token !== "string" || token.length < 20 || token.length > 8192) return null;
   const parts = token.split(".");
   if (parts.length !== 3 || parts[0] !== "gw1") return null;
   const key = await importKey(secret);
@@ -288,6 +282,9 @@ export async function startAuthorization(searchParams, origin, secret, now) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(challenge)) return fail("invalid_request");
   const scope = searchParams.get("scope") || SCOPE;
   if (scope !== SCOPE) return fail("invalid_scope");
+  // Bind the connector URL into the signed transaction. /oauth/token may omit
+  // resource and will use this value. A resource that is present must parse as
+  // one of this host's connector URLs.
   const resource = parseConnectorResource(searchParams.get("resource") || "", origin);
   if (!resource) return fail("invalid_target");
   const txn = await signPayload(
@@ -344,10 +341,27 @@ export async function exchangeToken(params, secret, now) {
   const code = await readPayload(params.get("code") || "", secret, "code", now);
   if (!code) return { status: 400, error: "invalid_grant" };
   if ((await sha256Hex(clientId)) !== code.cid) return { status: 400, error: "invalid_grant" };
-  if ((params.get("redirect_uri") || "") !== code.redir || !isAllowedRedirect(code.redir)) {
+  if (
+    (params.get("redirect_uri") || "") !== code.redir ||
+    !Array.isArray(client.uris) ||
+    !client.uris.includes(code.redir) ||
+    !isAllowedRedirect(code.redir)
+  ) {
     return { status: 400, error: "invalid_grant" };
   }
-  if ((params.get("resource") || "") !== code.aud) return { status: 400, error: "invalid_target" };
+  // resource is optional. When the client sends it, it must be the connector
+  // URL bound into this code at /oauth/authorize. When it is absent, that
+  // bound URL is the audience.
+  const requestedResource = params.get("resource") || "";
+  if (requestedResource) {
+    let parsed = null;
+    try {
+      parsed = parseConnectorResource(requestedResource, new URL(code.aud).origin);
+    } catch {
+      parsed = null;
+    }
+    if (!parsed || parsed.canonical !== code.aud) return { status: 400, error: "invalid_target" };
+  }
   const verifier = params.get("code_verifier") || "";
   if (!validVerifier(verifier)) return { status: 400, error: "invalid_grant" };
   const expected = await codeChallengeS256(verifier);

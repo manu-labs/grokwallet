@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { codeChallengeS256, isAllowedRedirect, parseConnectorResource } from "../functions/_lib/_oauth.js";
+import { codeChallengeS256, isAllowedRedirect, parseConnectorResource, readPayload } from "../functions/_lib/_oauth.js";
 import { handleRequest, LINK_STATUS_TEXT } from "../functions/_lib/_server.js";
 
 const SECRET = "test-key-test-key-test-key-test-key";
@@ -11,9 +11,9 @@ const NOW = 1_700_000_000;
 const ORIGIN = "https://grokwallet.fun";
 const ENV = { GROKWALLET_OAUTH_HMAC_KEY: SECRET };
 const REDIRECTS = [
-  "cursor://anysphere.cursor-mcp/oauth/callback",
   "https://www.cursor.com/agents/mcp/oauth/callback",
-  "http://localhost:8787/callback",
+  "https://bot.example/oauth/callback?listen=1",
+  "http://localhost:8787/any/path",
 ];
 
 function walk(dir) {
@@ -86,15 +86,16 @@ test("connector URLs keep only the public user code", () => {
   assert.equal(parseConnectorResource("https://grokwallet.fun/mcp/c/%2e%2e", ORIGIN), null);
 });
 
-test("redirect allowlist is exact and loopback is only /callback", () => {
+test("registration accepts any https URI and loopback http", () => {
   for (const uri of REDIRECTS) assert.equal(isAllowedRedirect(uri), true);
-  assert.equal(isAllowedRedirect("http://127.0.0.1:8787/callback"), true);
-  assert.equal(isAllowedRedirect("https://evil.example/callback"), false);
+  assert.equal(isAllowedRedirect("https://evil.example/callback"), true);
+  assert.equal(isAllowedRedirect("http://127.0.0.1:9/cb/extra"), true);
+  assert.equal(isAllowedRedirect("http://127.0.0.1/callback"), true);
   assert.equal(isAllowedRedirect("javascript:https://www.cursor.com/agents/mcp/oauth/callback"), false);
-  assert.equal(isAllowedRedirect("cursor://anysphere.cursor-mcp/oauth/callback/extra"), false);
+  assert.equal(isAllowedRedirect("cursor://anysphere.cursor-mcp/oauth/callback"), false);
   assert.equal(isAllowedRedirect("https://user@www.cursor.com/agents/mcp/oauth/callback"), false);
   assert.equal(isAllowedRedirect("http://localhost:8787/callback/../steal"), false);
-  assert.equal(isAllowedRedirect("https://www.cursor.com.evil.example/agents/mcp/oauth/callback"), false);
+  assert.equal(isAllowedRedirect("http://evil.example/callback"), false);
 });
 
 test("PKCE S256, path code, and a token that cannot cross connectors", async () => {
@@ -119,12 +120,15 @@ test("PKCE S256, path code, and a token that cannot cross connectors", async () 
   );
   assert.equal(done.status, 302);
   const back = new URL(done.headers.get("location"));
-  assert.equal(back.protocol, "cursor:");
-  assert.equal(back.hostname, "anysphere.cursor-mcp");
-  assert.equal(back.pathname, "/oauth/callback");
+  assert.equal(`${back.origin}${back.pathname}`, REDIRECTS[0]);
   assert.equal(back.searchParams.get("state"), "state-1");
   const code = back.searchParams.get("code");
   assert.match(code, /^gw1\./);
+  const clientPayload = await readPayload(clientId, SECRET, "client", NOW);
+  const codePayload = await readPayload(code, SECRET, "code", NOW);
+  assert.deepEqual(clientPayload.uris, REDIRECTS);
+  assert.equal(codePayload.redir, REDIRECTS[0]);
+  assert.equal(codePayload.aud, resource);
 
   const mismatch = await call(
     `/oauth/complete?txn=${encodeURIComponent(approval.searchParams.get("oauth_return"))}&user_code=ZZZZ-9999`,
@@ -138,7 +142,6 @@ test("PKCE S256, path code, and a token that cannot cross connectors", async () 
     redirect_uri: REDIRECTS[0],
     client_id: clientId,
     code_verifier: verifier,
-    resource,
   });
   const token = await call("/oauth/token", {
     method: "POST",
@@ -150,6 +153,23 @@ test("PKCE S256, path code, and a token that cannot cross connectors", async () 
   assert.equal(token.payload.scope, "link_status");
   assert.equal(Object.hasOwn(token.payload, "refresh_token"), false);
   assert.equal(token.text.includes("device-secret-value"), false);
+
+  const matched = await call("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ ...Object.fromEntries(form), resource }),
+  });
+  assert.equal(matched.status, 200);
+  const otherResource = await call("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      ...Object.fromEntries(form),
+      resource: "https://grokwallet.fun/mcp/c/WXYZ-9876",
+    }),
+  });
+  assert.equal(otherResource.status, 400);
+  assert.equal(otherResource.payload.error, "invalid_target");
 
   const again = await call("/oauth/token", {
     method: "POST",
@@ -228,15 +248,25 @@ test("authorize rejects an unregistered redirect without sending the browser the
   assert.equal(response.text.includes("device-secret-value"), false);
 });
 
-test("registration rejects a redirect that is not on the allowlist", async () => {
-  const response = await call("/oauth/register", {
+test("registration rejects non-https and non-loopback redirects", async () => {
+  for (const uri of ["http://evil.example/callback", "cursor://anysphere.cursor-mcp/oauth/callback", "javascript:alert(1)"]) {
+    const response = await call("/oauth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ redirect_uris: [uri] }),
+    });
+    assert.equal(response.status, 400, uri);
+    assert.equal(response.payload.error, "invalid_redirect_uri");
+    assert.equal(response.text.includes(uri), false);
+  }
+  const accepted = await call("/oauth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ redirect_uris: ["https://evil.example/callback"] }),
+    body: JSON.stringify({ redirect_uris: ["https://evil.example/callback", "http://127.0.0.1:4242/cb"] }),
   });
-  assert.equal(response.status, 400);
-  assert.equal(response.payload.error, "invalid_redirect_uri");
-  assert.equal(response.text.includes("evil.example"), false);
+  assert.equal(accepted.status, 201);
+  const stored = await readPayload(accepted.payload.client_id, SECRET, "client", NOW);
+  assert.deepEqual(stored.uris, ["https://evil.example/callback", "http://127.0.0.1:4242/cb"]);
 });
 
 test("metadata and a missing HMAC key", async () => {

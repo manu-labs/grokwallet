@@ -89,7 +89,7 @@ Grok Bot adds that URL with `AddMcpServer`, then `AuthenticateMcpServer` (accoun
 
 Codes and tokens are HMAC-signed with `GROKWALLET_OAUTH_HMAC_KEY`. The worker does not store them. There is no KV namespace. IPFS does not run these routes. A gateway copy of the static files cannot show the Connect card.
 
-Redirect URIs are allowlisted: `cursor://anysphere.cursor-mcp/oauth/callback`, `https://www.cursor.com/agents/mcp/oauth/callback`, `https://www.cursor.com/bot/mcp/oauth/callback`, and `http://localhost` or `http://127.0.0.1` with any port and path `/callback`. Anything else is rejected and is not used as a `Location`.
+Registration accepts any `https` redirect URI, and `http` only for `localhost` or `127.0.0.1` with any port and path. `/oauth/authorize` then requires an exact match against the URIs stored in the signed client id. A `redirect_uri` that was not registered is rejected and is not used as a `Location`. `resource` on `/oauth/token` is optional; when it is sent it must be the connector URL bound at `/oauth/authorize`.
 
 After a publish that includes `functions/`, this check should be HTTP 401 with a `resource_metadata` URL, not a static 404:
 
