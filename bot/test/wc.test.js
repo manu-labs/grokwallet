@@ -17,6 +17,7 @@ import {
   classifyMethod,
   originReport,
   payloadHash,
+  PUBLIC_WC_PROJECT_ID,
   requireWcProjectId,
 } from "../src/wc/safety.js";
 import { setCapAmount, setTokenCap } from "../src/policy.js";
@@ -442,22 +443,27 @@ test("the daemon keeps proposal and request identity and rejects raw-hash method
   }
 });
 
-test("project id is config or env and is not a baked-in default", () => {
+test("project id defaults to the public id, then config, then env", () => {
   const previousHome = process.env.GROKWALLET_HOME;
   const previousId = process.env.GROKWALLET_WC_PROJECT_ID;
   const dir = mkdtempSync(join(tmpdir(), "gwc-home-"));
   process.env.GROKWALLET_HOME = dir;
   delete process.env.GROKWALLET_WC_PROJECT_ID;
   try {
-    assert.throws(() => requireWcProjectId(), /dashboard\.reown\.com/);
-    process.env.GROKWALLET_WC_PROJECT_ID = "ab".repeat(16);
-    assert.equal(requireWcProjectId(), "ab".repeat(16));
-    delete process.env.GROKWALLET_WC_PROJECT_ID;
+    assert.equal(PUBLIC_WC_PROJECT_ID, "bdfd32cda68514c6f0300c6f7a80320d");
+    assert.equal(requireWcProjectId(), PUBLIC_WC_PROJECT_ID);
     writeConfig({ appId: "cmvh5kyg300qy0gl01ww23ixy", wcProjectId: "cd".repeat(16) });
     writeConfig({ appId: "cmvh5kyg300qy0gl01ww23ixy" });
     assert.equal(readConfig().wcProjectId, "cd".repeat(16));
     assert.equal(readConfig().appId, "cmvh5kyg300qy0gl01ww23ixy");
     assert.equal(requireWcProjectId(), "cd".repeat(16));
+    process.env.GROKWALLET_WC_PROJECT_ID = "ab".repeat(16);
+    assert.equal(requireWcProjectId(), "ab".repeat(16));
+    process.env.GROKWALLET_WC_PROJECT_ID = "not-a-project-id";
+    assert.throws(() => requireWcProjectId(), /built-in public project id/);
+    delete process.env.GROKWALLET_WC_PROJECT_ID;
+    writeConfig({ wcProjectId: "short" });
+    assert.throws(() => requireWcProjectId(), /built-in public project id/);
   } finally {
     if (previousHome === undefined) delete process.env.GROKWALLET_HOME;
     else process.env.GROKWALLET_HOME = previousHome;
@@ -470,11 +476,14 @@ test("help, the wallet-ops skill, and the diff wording stay generic", () => {
   assert.match(HELP, /wc pair <wc-uri>/);
   assert.match(HELP, /wc approve <id> --yes/);
   assert.match(HELP, /dashboard\.reown\.com/);
+  assert.match(HELP, /public WalletConnect project id is built in/);
   const templatePath = join(import.meta.dirname, "../../template/grokwallet.json");
   const template = JSON.parse(readFileSync(templatePath, "utf8"));
   const ops = template.skills.find((skill) => skill.name === "wallet-ops");
   assert.match(ops.content, /wc approve ID --yes/);
   assert.match(ops.content, /origin is MISMATCH/);
+  assert.match(ops.content, /public project id/);
+  assert.match(ops.content, /GROKWALLET_WC_PROJECT_ID overrides wcProjectId/);
   assert.ok(Buffer.byteLength(ops.content) < 6000);
   assert.ok(Buffer.byteLength(template.skills.find((skill) => skill.name === "getting-started").content) < 6000);
   const roots = ["bot/src", "bot/test", "template", "docs", "README.md", "SECURITY.md", ".env.example"];
