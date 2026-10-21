@@ -55,12 +55,14 @@ CI (`.github/workflows/ci.yml`) runs on pull requests and on `main`. It does not
 
 Publish (`.github/workflows/publish.yml`) runs when you push a tag `v*` and when you start it by hand. It builds the page once with `PRIVY_APP_ID`, packs `app/out` into `grokwallet-app.tar.gz`, attests that archive (and the CLI archive, the manifest, and `SHA256SUMS`) with `actions/attest-build-provenance`, extracts the attested archive, and uploads that directory with `cloudflare/wrangler-action` (`pages deploy`, Wrangler `4.151.3`). The command runs from the repo root, so Wrangler also uploads the `functions/` directory next to `dist/site`. Those functions are not inside the attested tarball. When `IPFS_PINNING_TOKEN` is set, it pins the static directory only and writes the CID to the job summary. A tag also opens a GitHub release. The job stops before the build if either Cloudflare secret is missing. It does not read `GROKWALLET_OAUTH_HMAC_KEY`; that value lives on the Pages project.
 
-The bot template tells the agent to install tag `v0.1.0`. The first publish should be that tag, from the commit whose template you are distributing:
+The bot template tells the agent to install tag `v0.2.0`. Publish that tag from the commit whose template you are distributing:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
+
+Leave tag `v0.1.0` where it is.
 
 If you need a different tag, change the tag in `template/grokwallet.json` in the same commit, then tag that commit.
 
