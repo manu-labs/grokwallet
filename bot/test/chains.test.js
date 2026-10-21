@@ -56,10 +56,14 @@ test("login stdout contains the user code and connector URL, not the device code
     verificationUriComplete: "https://grokwallet.fun/?user_code=ABCD-1234",
     userCode: "ABCD-1234",
     connectorUrl,
+    expiresInSeconds: 600,
+    now: Date.parse("2026-10-21T05:00:00.000Z"),
   });
   assert.match(text, /verification_uri_complete: https:\/\/grokwallet\.fun\/\?user_code=ABCD-1234\n/);
   assert.match(text, /user_code: ABCD-1234\n/);
   assert.match(text, /connector_url: https:\/\/grokwallet\.fun\/mcp\/c\/ABCD-1234\n/);
+  assert.match(text, /expires_in: 600\n/);
+  assert.match(text, /expires_at: 2026-10-21T05:10:00.000Z\n/);
   assert.equal(text.includes(deviceCode), false);
 });
 
@@ -88,6 +92,7 @@ test("device poll uses the RFC 8628 grant and honors slow_down", async () => {
       json: async () => ({ access_token: "a", refresh_token: "b", expires_in: 900 }),
     };
   };
+  const sleeps = [];
   const tokens = await pollDeviceToken({
     appId: "app",
     deviceCode: "device-secret-value",
@@ -95,6 +100,7 @@ test("device poll uses the RFC 8628 grant and honors slow_down", async () => {
     expiresInSeconds: 600,
     fetchImpl,
     sleep: async (ms) => {
+      sleeps.push(ms);
       now += ms;
     },
     now: () => now,
@@ -103,6 +109,38 @@ test("device poll uses the RFC 8628 grant and honors slow_down", async () => {
   assert.equal(calls[0].grant_type, DEVICE_GRANT);
   assert.equal(calls[0].device_code, "device-secret-value");
   assert.equal(calls.length, 3);
+  assert.deepEqual(sleeps, [5000, 10000, 10000]);
+});
+
+test("device poll keeps waiting through authorization_pending for the full expiry window", async () => {
+  let now = 0;
+  const sleeps = [];
+  let polls = 0;
+  await assert.rejects(
+    () =>
+      pollDeviceToken({
+        appId: "app",
+        deviceCode: "device-secret-value",
+        intervalSeconds: 5,
+        expiresInSeconds: 12,
+        fetchImpl: async () => {
+          polls += 1;
+          return {
+            ok: false,
+            status: 400,
+            json: async () => ({ error: "authorization_pending" }),
+          };
+        },
+        sleep: async (ms) => {
+          sleeps.push(ms);
+          now += ms;
+        },
+        now: () => now,
+      }),
+    /timed out waiting for approval/,
+  );
+  assert.ok(polls >= 2);
+  assert.ok(sleeps.reduce((sum, ms) => sum + ms, 0) >= 12000);
 });
 
 test("argument parser keeps --yes and the message text", () => {

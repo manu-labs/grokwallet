@@ -110,9 +110,10 @@ export async function login() {
       verificationUriComplete: device.verification_uri_complete,
       userCode: device.user_code,
       connectorUrl: connectorUrlForUserCode(device.user_code),
+      expiresInSeconds: device.expires_in,
     }),
   );
-  process.stderr.write("waiting for approval\n");
+  process.stderr.write(`waiting for approval for ${device.expires_in}s\n`);
   const tokens = await pollDeviceToken({
     appId,
     deviceCode: device.device_code,

@@ -59,6 +59,23 @@ async function register() {
   return response.payload.client_id;
 }
 
+async function approvalProof(txn, userCode) {
+  const response = await call("/oauth/proof", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ txn, user_code: userCode }),
+  });
+  assert.equal(response.status, 200, response.text);
+  return response.payload.proof;
+}
+
+async function completeApproval(txn, userCode) {
+  const proof = await approvalProof(txn, userCode);
+  return call(
+    `/oauth/complete?txn=${encodeURIComponent(txn)}&user_code=${encodeURIComponent(userCode)}&proof=${encodeURIComponent(proof)}`,
+  );
+}
+
 async function authorize(clientId, { resource, redirect = REDIRECTS[0], verifier, challenge, state = "state-1" }) {
   const params = new URLSearchParams({
     response_type: "code",
@@ -116,9 +133,12 @@ test("PKCE S256, path code, and a token that cannot cross connectors", async () 
   assert.equal(started.headers.get("location").includes("device_code"), false);
   assert.equal(approval.searchParams.get("device_code"), null);
 
-  const done = await call(
-    `/oauth/complete?txn=${encodeURIComponent(approval.searchParams.get("oauth_return"))}&user_code=ABCD-1234`,
-  );
+  const txn = approval.searchParams.get("oauth_return");
+  const withoutProof = await call(`/oauth/complete?txn=${encodeURIComponent(txn)}&user_code=ABCD-1234`);
+  assert.equal(withoutProof.status, 400);
+  assert.equal(withoutProof.headers.get("location"), null);
+  assert.equal(withoutProof.text.includes("code="), false);
+  const done = await completeApproval(txn, "ABCD-1234");
   assert.equal(done.status, 302);
   const back = new URL(done.headers.get("location"));
   assert.equal(`${back.origin}${back.pathname}`, REDIRECTS[0]);
@@ -228,6 +248,34 @@ test("PKCE S256, path code, and a token that cannot cross connectors", async () 
   const queryStart = await authorize(clientId, { resource: queryResource, redirect: REDIRECTS[1], challenge, state: "q" });
   assert.equal(queryStart.status, 302);
   assert.equal(new URL(queryStart.headers.get("location")).searchParams.get("user_code"), "ABCD-1234");
+});
+
+test("completion requires an approval proof bound to that user code, and deny returns access_denied", async () => {
+  const verifier = `${"f".repeat(43)}-verifier`;
+  const challenge = await codeChallengeS256(verifier);
+  const clientId = await register();
+  const first = await authorize(clientId, { resource: "https://grokwallet.fun/mcp/c/ABCD-1234", challenge, state: "one" });
+  const second = await authorize(clientId, { resource: "https://grokwallet.fun/mcp/c/ABCD-1234", challenge, state: "two" });
+  const txnOne = new URL(first.headers.get("location")).searchParams.get("oauth_return");
+  const txnTwo = new URL(second.headers.get("location")).searchParams.get("oauth_return");
+  const proofOne = await approvalProof(txnOne, "ABCD-1234");
+  const crossed = await call(
+    `/oauth/complete?txn=${encodeURIComponent(txnTwo)}&user_code=ABCD-1234&proof=${encodeURIComponent(proofOne)}`,
+  );
+  assert.equal(crossed.status, 400);
+  assert.equal(crossed.headers.get("location"), null);
+  const otherCode = await call("/oauth/proof", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ txn: txnOne, user_code: "ZZZZ-9999" }),
+  });
+  assert.equal(otherCode.status, 400);
+  const denied = await call(`/oauth/complete?txn=${encodeURIComponent(txnTwo)}&user_code=ABCD-1234&deny=1`);
+  assert.equal(denied.status, 302);
+  const back = new URL(denied.headers.get("location"));
+  assert.equal(back.searchParams.get("error"), "access_denied");
+  assert.equal(back.searchParams.get("code"), null);
+  assert.equal(back.searchParams.get("state"), "two");
 });
 
 test("authorize rejects an unregistered redirect without sending the browser there", async () => {
@@ -363,9 +411,7 @@ test("refresh returns a link_status token and a confidential client must present
   });
   const approval = new URL(started.headers.get("location"));
   assert.equal(approval.searchParams.get("user_code"), "TEST-CODE");
-  const done = await call(
-    `/oauth/complete?txn=${encodeURIComponent(approval.searchParams.get("oauth_return"))}&user_code=TEST-CODE`,
-  );
+  const done = await completeApproval(approval.searchParams.get("oauth_return"), "TEST-CODE");
   const back = new URL(done.headers.get("location"));
   const code = back.searchParams.get("code");
   const token = await call("/oauth/token", {
@@ -462,9 +508,7 @@ test("refresh returns a link_status token and a confidential client must present
     state: "sec",
   });
   const secretApproval = new URL(secretStart.headers.get("location"));
-  const secretDone = await call(
-    `/oauth/complete?txn=${encodeURIComponent(secretApproval.searchParams.get("oauth_return"))}&user_code=TEST-CODE`,
-  );
+  const secretDone = await completeApproval(secretApproval.searchParams.get("oauth_return"), "TEST-CODE");
   const secretCode = new URL(secretDone.headers.get("location")).searchParams.get("code");
   const noSecret = await call("/oauth/token", {
     method: "POST",
@@ -573,8 +617,21 @@ test("local connector flow discovers metadata, registers, refreshes, and calls l
     assert.equal(approval.origin, origin);
     assert.equal(approval.pathname, "/");
     assert.equal(approval.searchParams.get("user_code"), "TEST-CODE");
+    const txn = approval.searchParams.get("oauth_return");
+    const premature = await fetch(`${origin}/oauth/complete?txn=${encodeURIComponent(txn)}&user_code=TEST-CODE`, {
+      redirect: "manual",
+    });
+    assert.equal(premature.status, 400);
+    assert.equal(premature.headers.get("location"), null);
+    const proved = await fetch(`${origin}/oauth/proof`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ txn, user_code: "TEST-CODE" }),
+    });
+    assert.equal(proved.status, 200);
+    const { proof } = await proved.json();
     const complete = await fetch(
-      `${origin}/oauth/complete?txn=${encodeURIComponent(approval.searchParams.get("oauth_return"))}&user_code=TEST-CODE`,
+      `${origin}/oauth/complete?txn=${encodeURIComponent(txn)}&user_code=TEST-CODE&proof=${encodeURIComponent(proof)}`,
       { redirect: "manual" },
     );
     assert.equal(complete.status, 302);

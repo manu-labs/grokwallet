@@ -108,6 +108,7 @@ jobs:
           test -f functions/oauth/token.js
           test -f functions/oauth/register.js
           test -f functions/oauth/complete.js
+          test -f functions/oauth/proof.js
           test -f 'functions/mcp/c/[code].js'
           test -f functions/.well-known/oauth-authorization-server.js
           test -f functions/.well-known/oauth-protected-resource.js
