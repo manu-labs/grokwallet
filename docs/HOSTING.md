@@ -55,14 +55,14 @@ CI (`.github/workflows/ci.yml`) runs on pull requests and on `main`. It does not
 
 Publish (`.github/workflows/publish.yml`) runs when you push a tag `v*` and when you start it by hand. It builds the page once with `PRIVY_APP_ID`, packs `app/out` into `grokwallet-app.tar.gz`, attests that archive (and the CLI archive, the manifest, and `SHA256SUMS`) with `actions/attest-build-provenance`, extracts the attested archive, and uploads that directory with `cloudflare/wrangler-action` (`pages deploy`, Wrangler `4.151.3`). The command runs from the repo root, so Wrangler also uploads the `functions/` directory next to `dist/site`. Those functions are not inside the attested tarball. When `IPFS_PINNING_TOKEN` is set, it pins the static directory only and writes the CID to the job summary. A tag also opens a GitHub release. The job stops before the build if either Cloudflare secret is missing. It does not read `GROKWALLET_OAUTH_HMAC_KEY`; that value lives on the Pages project.
 
-The bot template tells the agent to install tag `v0.2.0`. Publish that tag from the commit whose template you are distributing:
+The bot template tells the agent to install tag `v0.2.1`. Publish that tag from the commit whose template you are distributing:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
-Leave tag `v0.1.0` where it is.
+Leave tags `v0.1.0` and `v0.2.0` where they are.
 
 If you need a different tag, change the tag in `template/grokwallet.json` in the same commit, then tag that commit.
 
@@ -87,11 +87,11 @@ Create the project before the first publish. The workflow uses direct upload. It
 
 The CLI prints `connector_url: https://grokwallet.fun/mcp/c/<user_code>`. The path segment is the public user code. `https://grokwallet.fun/mcp?code=<user_code>` is the same connector. The device code is not in either URL.
 
-Grok Bot adds that URL with `AddMcpServer`, then `AuthenticateMcpServer` (account `default`) opens the Connect card. The function answers MCP OAuth: protected-resource metadata, authorization-server metadata, dynamic client registration, `/oauth/authorize`, and `/oauth/token` with PKCE S256. `/oauth/authorize` redirects to `https://grokwallet.fun/?user_code=<user_code>&oauth_return=<signed token>`. After the browser approves, the page navigates to `/oauth/complete` on this origin, which redirects to the bot's registered `redirect_uri` with an authorization code. The access token from `/oauth/token` can call only `link_status`.
+The getting-started skill adds that URL with `AddMcpServer`, then `AuthenticateMcpServer` (account `default`) opens the Connect card. It removes an older connector named GrokWallet Link first, and it removes the connector again after the CLI prints approved. The plain approval link is shown only after the card returns an error. The function answers MCP OAuth: protected-resource metadata, authorization-server metadata, dynamic client registration, `/oauth/authorize`, and `/oauth/token` with PKCE S256. `/oauth/authorize` redirects to `https://grokwallet.fun/?user_code=<user_code>&oauth_return=<signed token>`. After the browser approves, the page navigates to `/oauth/complete` on this origin, which redirects to the bot's registered `redirect_uri` with an authorization code. The access token from `/oauth/token` can call only `link_status` and lasts 30 days. `grant_type=refresh_token` mints another one.
 
 Codes and tokens are HMAC-signed with `GROKWALLET_OAUTH_HMAC_KEY`. The worker does not store them. There is no KV namespace. IPFS does not run these routes. A gateway copy of the static files cannot show the Connect card.
 
-Registration accepts any `https` redirect URI, and `http` only for `localhost` or `127.0.0.1` with any port and path. `/oauth/authorize` then requires an exact match against the URIs stored in the signed client id. A `redirect_uri` that was not registered is rejected and is not used as a `Location`. `resource` on `/oauth/token` is optional; when it is sent it must be the connector URL bound at `/oauth/authorize`.
+Registration accepts any `https` redirect URI, and `http` only for `localhost` or `127.0.0.1` with any port and path. It accepts `grant_types` of `authorization_code` and `refresh_token` and ignores other grant names and unknown metadata fields. `token_endpoint_auth_method` may be `none`, `client_secret_post`, or `client_secret_basic`. A secret method receives an HMAC-derived `client_secret`. `/oauth/authorize` then requires an exact match against the URIs stored in the signed client id. A `redirect_uri` that was not registered is rejected and is not used as a `Location`. `resource` on `/oauth/token` is optional; when it is sent it must be the connector URL bound at `/oauth/authorize`.
 
 After a publish that includes `functions/`, this check should be HTTP 401 with a `resource_metadata` URL, not a static 404:
 

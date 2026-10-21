@@ -54,8 +54,12 @@ function redirect(location) {
   });
 }
 
-function originOf(url) {
-  return isPublicHost(url.hostname) ? url.origin : "";
+function originOf(url, allowLocal) {
+  if (isPublicHost(url.hostname)) return url.origin;
+  if (!allowLocal) return "";
+  const host = url.hostname.toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1") return url.origin;
+  return "";
 }
 
 function resourceMetadataUrl(origin, canonical) {
@@ -128,7 +132,7 @@ async function handleMcp(request, url, env, now, canonical) {
       return rpc(id, {
         protocolVersion,
         capabilities: { tools: {} },
-        serverInfo: { name: "grokwallet-link", version: "0.1.0" },
+        serverInfo: { name: "grokwallet-link", version: "0.2.1" },
         instructions:
           "This connector only opens the approval page. Wallet actions stay on the local grokwallet CLI. This server does not receive wallet credentials.",
       });
@@ -169,7 +173,7 @@ async function handleMcp(request, url, env, now, canonical) {
 export async function handleRequest(request, env = {}, options = {}) {
   try {
     const url = new URL(request.url);
-    const origin = originOf(url);
+    const origin = originOf(url, options.allowLocal === true);
     if (!origin) return text(404, "not found");
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: JSON_HEADERS });
     const now = options.now || Math.floor(Date.now() / 1000);
@@ -238,7 +242,7 @@ export async function handleRequest(request, env = {}, options = {}) {
       if (!type.includes("application/x-www-form-urlencoded")) return json(400, { error: "invalid_request" });
       const raw = await readBody(request, 16384);
       if (raw === null) return json(400, { error: "invalid_request" });
-      const result = await exchangeToken(new URLSearchParams(raw), secret, now);
+      const result = await exchangeToken(new URLSearchParams(raw), secret, now, request.headers.get("authorization") || "");
       if (result.body) return json(200, result.body);
       return json(result.status, { error: result.error });
     }

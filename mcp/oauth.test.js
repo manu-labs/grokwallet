@@ -3,7 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { codeChallengeS256, isAllowedRedirect, parseConnectorResource, readPayload } from "../functions/_lib/_oauth.js";
+import { createServer } from "node:http";
+import { codeChallengeS256, isAllowedRedirect, parseConnectorResource, readPayload, TOKEN_TTL } from "../functions/_lib/_oauth.js";
 import { handleRequest, LINK_STATUS_TEXT } from "../functions/_lib/_server.js";
 
 const SECRET = "test-key-test-key-test-key-test-key";
@@ -276,6 +277,8 @@ test("metadata and a missing HMAC key", async () => {
   assert.equal(as.payload.authorization_endpoint, `${ORIGIN}/oauth/authorize`);
   assert.deepEqual(as.payload.code_challenge_methods_supported, ["S256"]);
   assert.equal(as.payload.registration_endpoint, `${ORIGIN}/oauth/register`);
+  assert.deepEqual(as.payload.grant_types_supported, ["authorization_code", "refresh_token"]);
+  assert.deepEqual(as.payload.token_endpoint_auth_methods_supported, ["none", "client_secret_post", "client_secret_basic"]);
 
   const prm = await call("/.well-known/oauth-protected-resource/mcp/c/ABCD-1234");
   assert.equal(prm.payload.resource, `${ORIGIN}/mcp/c/ABCD-1234`);
@@ -294,8 +297,344 @@ test("metadata and a missing HMAC key", async () => {
   assert.match(missing.text, /GROKWALLET_OAUTH_HMAC_KEY/);
 });
 
+const GROK_REGISTRATION = {
+  redirect_uris: ["https://www.cursor.com/bot/mcp/oauth/callback"],
+  grant_types: ["authorization_code", "refresh_token"],
+  response_types: ["code"],
+  token_endpoint_auth_method: "none",
+  client_name: "Grok Bot",
+};
+
+test("registration accepts the Grok Bot payload and ignores unknown extras", async () => {
+  const response = await call("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...GROK_REGISTRATION,
+      grant_types: ["authorization_code", "refresh_token", "urn:example:ignored"],
+      response_types: ["code", "token"],
+      client_uri: "https://example.com/grok",
+      client_secret: "sent-by-the-client",
+    }),
+  });
+  assert.equal(response.status, 201);
+  assert.deepEqual(response.payload.grant_types, ["authorization_code", "refresh_token"]);
+  assert.deepEqual(response.payload.response_types, ["code"]);
+  assert.equal(response.payload.token_endpoint_auth_method, "none");
+  assert.equal(Object.hasOwn(response.payload, "client_secret"), false);
+  assert.equal(response.text.includes("sent-by-the-client"), false);
+  const stored = await readPayload(response.payload.client_id, SECRET, "client", NOW);
+  assert.deepEqual(stored.grants, ["authorization_code", "refresh_token"]);
+  assert.equal(stored.auth, "none");
+
+  const onlyRefresh = await call("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ redirect_uris: GROK_REGISTRATION.redirect_uris, grant_types: ["refresh_token"] }),
+  });
+  assert.equal(onlyRefresh.status, 400);
+  assert.equal(onlyRefresh.payload.error, "invalid_client_metadata");
+
+  const privateKey = await call("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...GROK_REGISTRATION, token_endpoint_auth_method: "private_key_jwt" }),
+  });
+  assert.equal(privateKey.status, 400);
+  assert.equal(privateKey.payload.error, "invalid_client_metadata");
+});
+
+test("refresh returns a link_status token and a confidential client must present its secret", async () => {
+  const verifier = `${"d".repeat(43)}-verifier`;
+  const challenge = await codeChallengeS256(verifier);
+  const registered = await call("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(GROK_REGISTRATION),
+  });
+  assert.equal(registered.status, 201);
+  const clientId = registered.payload.client_id;
+  const resource = "https://grokwallet.fun/mcp/c/TEST-CODE";
+  const started = await authorize(clientId, {
+    resource,
+    redirect: GROK_REGISTRATION.redirect_uris[0],
+    challenge,
+    state: "grok",
+  });
+  const approval = new URL(started.headers.get("location"));
+  assert.equal(approval.searchParams.get("user_code"), "TEST-CODE");
+  const done = await call(
+    `/oauth/complete?txn=${encodeURIComponent(approval.searchParams.get("oauth_return"))}&user_code=TEST-CODE`,
+  );
+  const back = new URL(done.headers.get("location"));
+  const code = back.searchParams.get("code");
+  const token = await call("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: GROK_REGISTRATION.redirect_uris[0],
+      client_id: clientId,
+      code_verifier: verifier,
+    }),
+  });
+  assert.equal(token.status, 200);
+  assert.equal(token.payload.expires_in, TOKEN_TTL);
+  assert.equal(TOKEN_TTL, 30 * 24 * 60 * 60);
+  assert.match(token.payload.refresh_token, /^gw1\./);
+  const refreshPayload = await readPayload(token.payload.refresh_token, SECRET, "refresh", NOW);
+  assert.equal(refreshPayload.aud, resource);
+
+  const stillValid = await call("/mcp/c/TEST-CODE", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token.payload.access_token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "link_status", arguments: {} } }),
+    now: NOW + 11 * 60,
+  });
+  assert.equal(stillValid.status, 200);
+
+  const expiredAccess = await call("/mcp/c/TEST-CODE", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token.payload.access_token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping" }),
+    now: NOW + TOKEN_TTL + 5,
+  });
+  assert.equal(expiredAccess.status, 401);
+
+  const refreshed = await call("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: token.payload.refresh_token,
+      client_id: clientId,
+      resource,
+    }),
+    now: NOW + TOKEN_TTL + 5,
+  });
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.payload.expires_in, TOKEN_TTL);
+  assert.match(refreshed.payload.refresh_token, /^gw1\./);
+  assert.notEqual(refreshed.payload.access_token, token.payload.access_token);
+  const afterRefresh = await call("/mcp/c/TEST-CODE", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${refreshed.payload.access_token}` },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/list" }),
+    now: NOW + TOKEN_TTL + 5,
+  });
+  assert.equal(afterRefresh.status, 200);
+
+  const otherClient = await call("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...GROK_REGISTRATION,
+      redirect_uris: ["https://www.cursor.com/bot/mcp/oauth/callback-other"],
+    }),
+  });
+  const wrongClient = await call("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: token.payload.refresh_token,
+      client_id: otherClient.payload.client_id,
+    }),
+  });
+  assert.equal(wrongClient.status, 400);
+  assert.equal(wrongClient.payload.error, "invalid_grant");
+
+  const secretClient = await call("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...GROK_REGISTRATION, token_endpoint_auth_method: "client_secret_basic" }),
+  });
+  assert.equal(secretClient.status, 201);
+  assert.equal(secretClient.payload.token_endpoint_auth_method, "client_secret_basic");
+  assert.match(secretClient.payload.client_secret, /^[A-Za-z0-9_-]+$/);
+  const secretId = secretClient.payload.client_id;
+  const secret = secretClient.payload.client_secret;
+  const secretStart = await authorize(secretId, {
+    resource,
+    redirect: GROK_REGISTRATION.redirect_uris[0],
+    challenge,
+    state: "sec",
+  });
+  const secretApproval = new URL(secretStart.headers.get("location"));
+  const secretDone = await call(
+    `/oauth/complete?txn=${encodeURIComponent(secretApproval.searchParams.get("oauth_return"))}&user_code=TEST-CODE`,
+  );
+  const secretCode = new URL(secretDone.headers.get("location")).searchParams.get("code");
+  const noSecret = await call("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: secretCode,
+      redirect_uri: GROK_REGISTRATION.redirect_uris[0],
+      client_id: secretId,
+      code_verifier: verifier,
+    }),
+  });
+  assert.equal(noSecret.status, 401);
+  assert.equal(noSecret.payload.error, "invalid_client");
+  const basic = Buffer.from(`${secretId}:${secret}`, "utf8").toString("base64");
+  const withBasic = await call("/oauth/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${basic}` },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      code: secretCode,
+      redirect_uri: GROK_REGISTRATION.redirect_uris[0],
+      code_verifier: verifier,
+    }),
+  });
+  assert.equal(withBasic.status, 200);
+  const postSecret = await call("/oauth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...GROK_REGISTRATION, token_endpoint_auth_method: "client_secret_post" }),
+  });
+  assert.equal(postSecret.payload.token_endpoint_auth_method, "client_secret_post");
+  assert.equal(Object.hasOwn(postSecret.payload, "client_secret"), true);
+});
+
+function listenLocal() {
+  const server = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (key === "host" || key === "content-length" || key === "transfer-encoding" || value === undefined) continue;
+      if (Array.isArray(value)) for (const item of value) headers.append(key, item);
+      else headers.set(key, value);
+    }
+    const body = Buffer.concat(chunks);
+    const request = new Request(`http://${req.headers.host}${req.url}`, {
+      method: req.method,
+      headers,
+      body: req.method === "GET" || req.method === "HEAD" ? undefined : body,
+    });
+    const response = await handleRequest(request, ENV, { now: NOW, allowLocal: true });
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const out = {};
+    response.headers.forEach((value, key) => {
+      out[key] = value;
+    });
+    res.writeHead(response.status, out);
+    res.end(bytes);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve(server));
+  });
+}
+
+test("local connector flow discovers metadata, registers, refreshes, and calls link_status", async () => {
+  const server = await listenLocal();
+  const address = server.address();
+  const origin = `http://127.0.0.1:${address.port}`;
+  const resource = `${origin}/mcp/c/TEST-CODE`;
+  try {
+    const bare = await fetch(resource, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {} } }),
+    });
+    assert.equal(bare.status, 401);
+    const metadataUrl = /resource_metadata="([^"]+)"/.exec(bare.headers.get("www-authenticate"))[1];
+    const prm = await (await fetch(metadataUrl)).json();
+    assert.equal(prm.resource, resource);
+    const issuer = prm.authorization_servers[0];
+    const as = await (await fetch(`${issuer}/.well-known/oauth-authorization-server`)).json();
+    assert.equal(as.registration_endpoint, `${origin}/oauth/register`);
+    assert.ok(as.grant_types_supported.includes("refresh_token"));
+    const registered = await fetch(as.registration_endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(GROK_REGISTRATION),
+    });
+    assert.equal(registered.status, 201);
+    const client = await registered.json();
+    const verifier = `${"e".repeat(43)}-verifier`;
+    const challenge = await codeChallengeS256(verifier);
+    const authorizeUrl = new URL(as.authorization_endpoint);
+    authorizeUrl.searchParams.set("response_type", "code");
+    authorizeUrl.searchParams.set("client_id", client.client_id);
+    authorizeUrl.searchParams.set("redirect_uri", GROK_REGISTRATION.redirect_uris[0]);
+    authorizeUrl.searchParams.set("code_challenge", challenge);
+    authorizeUrl.searchParams.set("code_challenge_method", "S256");
+    authorizeUrl.searchParams.set("state", "local");
+    authorizeUrl.searchParams.set("scope", "link_status");
+    authorizeUrl.searchParams.set("resource", resource);
+    const started = await fetch(authorizeUrl, { redirect: "manual" });
+    assert.equal(started.status, 302);
+    const approval = new URL(started.headers.get("location"));
+    assert.equal(approval.origin, origin);
+    assert.equal(approval.pathname, "/");
+    assert.equal(approval.searchParams.get("user_code"), "TEST-CODE");
+    const complete = await fetch(
+      `${origin}/oauth/complete?txn=${encodeURIComponent(approval.searchParams.get("oauth_return"))}&user_code=TEST-CODE`,
+      { redirect: "manual" },
+    );
+    assert.equal(complete.status, 302);
+    const callback = new URL(complete.headers.get("location"));
+    assert.equal(`${callback.origin}${callback.pathname}`, GROK_REGISTRATION.redirect_uris[0]);
+    const tokenResponse = await fetch(as.token_endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: callback.searchParams.get("code"),
+        redirect_uri: GROK_REGISTRATION.redirect_uris[0],
+        client_id: client.client_id,
+        code_verifier: verifier,
+      }),
+    });
+    assert.equal(tokenResponse.status, 200);
+    const token = await tokenResponse.json();
+    const refreshResponse = await fetch(as.token_endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: token.refresh_token,
+        client_id: client.client_id,
+      }),
+    });
+    const refreshed = await refreshResponse.json();
+    assert.equal(refreshResponse.status, 200);
+    for (const [method, id] of [
+      ["initialize", 1],
+      ["tools/list", 2],
+      ["tools/call", 3],
+    ]) {
+      const body =
+        method === "tools/call"
+          ? { jsonrpc: "2.0", id, method, params: { name: "link_status", arguments: {} } }
+          : { jsonrpc: "2.0", id, method, params: method === "initialize" ? { protocolVersion: "2025-06-18", capabilities: {} } : {} };
+      const rpc = await fetch(resource, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${refreshed.access_token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const payload = await rpc.json();
+      assert.equal(rpc.status, 200, method);
+      if (method === "initialize") assert.equal(payload.result.serverInfo.name, "grokwallet-link");
+      if (method === "tools/list") assert.equal(payload.result.tools[0].name, "link_status");
+      if (method === "tools/call") assert.equal(payload.result.content[0].text, LINK_STATUS_TEXT);
+    }
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
 test("Pages functions do not reference Privy credentials", () => {
-  const banned = ["device_code", "auth.privy.io", "refresh_token", "GROKWALLET_PASSPHRASE", "BEGIN PRIVATE KEY"];
+  const banned = ["device_code", "auth.privy.io", "GROKWALLET_PASSPHRASE", "BEGIN PRIVATE KEY", "privy-app-id"];
   for (const file of walk(new URL("../functions", import.meta.url).pathname)) {
     if (!file.endsWith(".js")) continue;
     const source = readFileSync(file, "utf8");
