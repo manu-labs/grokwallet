@@ -54,7 +54,7 @@ Treat the machine that holds `~/.grokwallet` as able to spend, up to the cap and
 4. Fund the addresses the bot shows. Incoming transfers do not need the agent.
 5. The bot must show a summary and wait for an explicit yes before it sends or signs, unless you have set a standing rule inside the cap.
 
-The pinned install is release `v0.2.3`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
+The pinned install is release `v0.2.4`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
 
 ## Quickstart for someone running the CLI
 

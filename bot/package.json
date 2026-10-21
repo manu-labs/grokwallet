@@ -1,6 +1,6 @@
 {
   "name": "grokwallet",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "description": "Non-custodial Ethereum and Solana CLI for a GrokWallet agent. No Privy app secret.",
