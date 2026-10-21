@@ -13,6 +13,7 @@ import {
   signTypedData,
   status,
 } from "./commands.js";
+import { walletConnectCommand } from "./wc/commands.js";
 
 export function parseArgs(argv) {
   const positionals = [];
@@ -89,6 +90,8 @@ export async function main(argv) {
     case "cap":
       cap(rest, flags);
       return 0;
+    case "wc":
+      return (await walletConnectCommand(rest, flags)) || 0;
     case "logout":
       logout();
       return 0;

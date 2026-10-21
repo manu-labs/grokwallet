@@ -61,6 +61,12 @@ export function chainConfig(name) {
   return { name, ...chain, rpc: process.env[chain.env] || chain.defaultRpc };
 }
 
+export function chainByCaip2(caip2) {
+  const name = Object.entries(CHAINS).find(([, chain]) => chain.caip2 === caip2)?.[0];
+  if (!name) return null;
+  return chainConfig(name);
+}
+
 async function rpcCall(url, body, fetchImpl, label = "balance RPC") {
   let response;
   try {
@@ -95,6 +101,15 @@ export async function solBalance(address, rpc, fetchImpl = fetch) {
   );
   if (!result || typeof result.value !== "number") throw new CliError("solana balance response was missing value");
   return BigInt(result.value);
+}
+
+export async function ethReceipt(hash, rpc, fetchImpl = fetch) {
+  return rpcCall(
+    rpc,
+    { jsonrpc: "2.0", id: 1, method: "eth_getTransactionReceipt", params: [hash] },
+    fetchImpl,
+    "receipt RPC",
+  );
 }
 
 export async function ethCall(rpc, to, data, fetchImpl = fetch) {

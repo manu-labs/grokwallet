@@ -71,7 +71,7 @@ function readStdinUtf8() {
   }
 }
 
-function requireSession() {
+export function requireSession() {
   const session = loadSession();
   if (!session?.accessToken || !session?.refreshToken) {
     throw new CliError("not logged in. Run: grokwallet login");
@@ -79,7 +79,7 @@ function requireSession() {
   return session;
 }
 
-function walletOf(session, chainType) {
+export function walletOf(session, chainType) {
   const matches = (session.wallets || []).filter((wallet) => wallet.chainType === chainType);
   if (matches.length === 0) {
     throw new CliError(
@@ -108,6 +108,19 @@ async function ensureAccess(session) {
     refreshToken: session.refreshToken,
   });
   return applyTokenResponse(session, payload);
+}
+
+export async function runWalletRpc(session, walletId, body, { idempotency = false } = {}) {
+  return withSigningKey(session, (current, authorizationKey) =>
+    walletRpc({
+      appId: current.appId,
+      accessToken: current.accessToken,
+      authorizationKey,
+      walletId,
+      body,
+      idempotencyKey: idempotency ? newIdempotencyKey() : undefined,
+    }),
+  );
 }
 
 async function withSigningKey(session, fn) {
@@ -225,7 +238,7 @@ export async function balance(flags) {
   }
 }
 
-function requireYes(flags, summary) {
+export function requireYes(flags, summary) {
   process.stdout.write(`${summary}\n`);
   if (!flags.yes) {
     throw new CliError("refusing without --yes. Show this summary in chat and wait for an explicit yes.", 2);
@@ -513,6 +526,15 @@ export const HELP = `grokwallet commands:
   sign-message --chain ethereum|solana (--message <text> | --message-file <path|->) --yes
   sign-typed-data --chain ethereum --data <json|@file> --yes
   cap show|set|clear|policy [--eth 0.01] [--sol 0.01] [--token chain:0xaddress=amount]
+  wc pair <wc-uri> [--timeout 30]
+  wc proposals
+  wc approve-proposal <id> --yes
+  wc reject-proposal <id>
+  wc requests
+  wc approve <id> --yes
+  wc reject <id>
+  wc sessions
+  wc disconnect <topic>
   logout
 
 send-eth checks native ETH value against the ETH cap. --amount 0 is allowed only with --data.
@@ -521,6 +543,10 @@ An ERC-20 transfer or transferFrom in send-eth --data is refused; use send-erc20
 sign-typed-data prints domain.chainId, verifyingContract, primaryType, and message, then asks Privy for eth_signTypedData_v4.
 A domain chainId such as Hyperliquid 0x66eee is not compared to the wallet chain.
 --message-file and --message-file - keep the file or stdin bytes, including line breaks.
+wc pair keeps a background relay process. Each proposal and each request is approved by its own id.
+personal_sign, eth_signTypedData_v4, eth_sendTransaction, and wallet_sendCalls use the same summaries and caps as the matching commands.
+An ERC-20 transfer inside a WalletConnect send is capped per token. eth_sign and other raw-hash methods are refused.
+Set GROKWALLET_WC_PROJECT_ID to a 32-character hex project id from https://dashboard.reown.com. This build does not include one.
 Stdout from login is the verification URL, the user code, and a connector URL.
 The connector URL embeds only the public user code.
 Tokens, the passphrase, the device code, and signing keys are never printed.

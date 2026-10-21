@@ -1,6 +1,6 @@
 {
   "name": "grokwallet",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "description": "Non-custodial Ethereum and Solana CLI for a GrokWallet agent. No Privy app secret.",
@@ -13,11 +13,12 @@
   "scripts": {
     "start": "node ./bin/grokwallet.js",
     "test": "node --test",
-    "lint": "node --check bin/grokwallet.js && node --check src/*.js && node --check test/*.js"
+    "lint": "node --check bin/grokwallet.js && node --check src/*.js && node --check src/wc/*.js && node --check test/*.js"
   },
   "dependencies": {
     "@hpke/chacha20poly1305": "1.7.1",
     "@hpke/core": "1.7.5",
+    "@walletconnect/sign-client": "2.26.0",
     "canonicalize": "2.1.0"
   }
 }

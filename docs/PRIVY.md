@@ -47,6 +47,7 @@ Taken from OpenAPI, which marks `additionalProperties: false`. The recipe's exam
 - `signAndSendTransaction` requires `caip2` (`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`) and a base64 legacy transaction. https://docs.privy.io/api-reference/wallets/solana/sign-and-send-transaction
 - `signMessage` on Solana requires `params.message` as base64 and `params.encoding: "base64"`.
 - ERC-20 transfer is not a separate Privy method. `send-erc20` builds `transfer(address,uint256)` calldata (`0xa9059cbb`) and submits it with `eth_sendTransaction`, `value` `0x0`, and `to` set to the token contract. `decimals()` is read with `eth_call` data `0x313ce567` on the chain's public RPC, not from Privy.
+- WalletConnect approvals do not add a Privy method. `personal_sign`, `eth_signTypedData_v4`, and `eth_sendTransaction` reuse the bodies above. A one-call `wallet_sendCalls` is sent as one `eth_sendTransaction`. Gas and nonce from the dapp are not copied; Privy fills them.
 
 Balances are not read from Privy. `GET /v1/wallets/{id}/balance` requires the app secret. The CLI calls public RPCs: `eth_getBalance`, `eth_call` for ERC-20 metadata, and Solana `getBalance`. Defaults are `https://ethereum.publicnode.com`, `https://mainnet.base.org`, `https://arb1.arbitrum.io/rpc`, `https://sepolia-rollup.arbitrum.io/rpc`, and `https://api.mainnet-beta.solana.com`.
 
