@@ -29,7 +29,7 @@ The function can see:
 - the public user code
 - the OAuth client's registered redirect URIs
 - the PKCE challenge and, at `/oauth/token`, the PKCE verifier
-- HMAC-signed authorization codes and access tokens that this function itself issued
+- HMAC-signed authorization codes, access tokens, and refresh tokens that this function itself issued
 
 The function cannot see, and the pages in `functions/` are written not to receive:
 
@@ -41,9 +41,11 @@ The function cannot see, and the pages in `functions/` are written not to receiv
 
 `device_verify` still runs in the browser, from the static page to `https://auth.privy.io`. The function does not call Privy. The access token it issues grants `link_status` only. That tool returns a fixed sentence. It does not read a balance or sign.
 
-There is no KV. Authorization codes are therefore not single-use. They expire in 60 seconds, and redeeming one does not reveal a Privy credential. The access token grants `link_status` only, so dynamic client registration accepts any `https` redirect URI, and `http` only when the host is `localhost` or `127.0.0.1` (any port, any path). Other schemes and `http` to any other host are rejected. The accepted list is stored inside the HMAC-signed `client_id`. `/oauth/authorize` redirects only when `redirect_uri` is an exact member of that list. Any other `redirect_uri` is HTTP 400 and is not placed in a `Location` header.
+There is no KV. Authorization codes are therefore not single-use. They expire in 60 seconds, and redeeming one does not reveal a Privy credential. The access token grants `link_status` only and lasts 30 days. A refresh token lasts 90 days, is bound to the client id and the connector URL, and can only mint another `link_status` access token. Neither token is single-use, because nothing is stored. Dynamic client registration accepts any `https` redirect URI, and `http` only when the host is `localhost` or `127.0.0.1` (any port, any path). Other schemes and `http` to any other host are rejected. The accepted list is stored inside the HMAC-signed `client_id`. `/oauth/authorize` redirects only when `redirect_uri` is an exact member of that list. Any other `redirect_uri` is HTTP 400 and is not placed in a `Location` header.
 
-`/oauth/authorize` also stores that redirect URI and the connector URL in the HMAC-signed authorization code. On `/oauth/token`, `resource` may be omitted. The connector URL saved at `/oauth/authorize` is used. If the client sends `resource`, it must be that same connector URL.
+Registration keeps `authorization_code` and, when the client asks for it, `refresh_token`. Other grant names are ignored. `response_types` must include `code`. `token_endpoint_auth_method` may be `none`, `client_secret_post`, or `client_secret_basic`. A secret method gets a `client_secret` derived from the HMAC key and the client id, and `/oauth/token` requires that secret. `none` gets no secret. Unknown metadata fields are ignored. The granted values are what the registration response returns.
+
+`/oauth/authorize` also stores that redirect URI and the connector URL in the HMAC-signed authorization code. On `/oauth/token`, `resource` may be omitted. The connector URL saved at `/oauth/authorize` is used. If the client sends `resource`, it must be that same connector URL. The same rule applies to `grant_type=refresh_token`.
 
 The approval page keeps `Content-Security-Policy` with `frame-ancestors 'none'` and `X-Frame-Options: DENY`. The return from the page to `/oauth/complete` is a same-origin path built from a token shape check. The query value is not used as a URL. A browser window can show the page. An iframe of the approval page is still refused.
 

@@ -10,10 +10,15 @@ export const USER_CODE = /^[A-Za-z0-9]{4,16}(?:-[A-Za-z0-9]{4,16})?$/;
 // 127.0.0.1. /authorize then requires an exact match against the URIs stored
 // in the signed client id, so a registered client cannot be sent elsewhere.
 
-const CLIENT_TTL = 30 * 24 * 60 * 60;
+const CLIENT_TTL = 90 * 24 * 60 * 60;
 const TXN_TTL = 10 * 60;
 const CODE_TTL = 60;
-const TOKEN_TTL = 10 * 60;
+// link_status grants nothing about the wallet, so the connector can keep the
+// access token for a month. The refresh token outlives it.
+export const TOKEN_TTL = 30 * 24 * 60 * 60;
+export const REFRESH_TTL = 90 * 24 * 60 * 60;
+const GRANT_ORDER = ["authorization_code", "refresh_token"];
+const AUTH_METHODS = ["none", "client_secret_post", "client_secret_basic"];
 
 export function base64urlEncode(bytes) {
   let binary = "";
@@ -81,9 +86,17 @@ export function parseConnectorResource(value, expectedOrigin) {
   } catch {
     return null;
   }
-  if (url.protocol !== "https:" || url.username || url.password || url.hash) return null;
+  if (url.username || url.password || url.hash) return null;
+  const host = url.hostname.toLowerCase();
+  const localHttp = url.protocol === "http:" && (host === "localhost" || host === "127.0.0.1");
+  if (url.protocol === "https:") {
+    if (!isPublicHost(host)) return null;
+  } else if (!localHttp) {
+    return null;
+  } else if (!expectedOrigin || url.origin !== expectedOrigin) {
+    return null;
+  }
   if (expectedOrigin && url.origin !== expectedOrigin) return null;
-  if (!isPublicHost(url.hostname)) return null;
   const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
   const pathCode = /^\/mcp\/c\/([^/]+)$/.exec(path);
   if (pathCode) {
@@ -196,6 +209,52 @@ function randomId() {
   return base64urlEncode(bytes);
 }
 
+function selectKnown(values, allowed, required) {
+  if (values === undefined) return { granted: [required] };
+  if (!Array.isArray(values) || values.length < 1 || values.length > 16) return { error: "invalid list" };
+  const seen = new Set();
+  for (const value of values) {
+    if (typeof value !== "string" || value.length < 1 || value.length > 64) return { error: "invalid list" };
+    seen.add(value);
+  }
+  const granted = allowed.filter((value) => seen.has(value));
+  if (!granted.includes(required)) return { error: `missing ${required}` };
+  return { granted };
+}
+
+async function deriveClientSecret(clientId, secret) {
+  const key = await importKey(secret);
+  if (!key) return "";
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, TEXT.encode(`gw1.secret.${clientId}`)));
+  return base64urlEncode(sig);
+}
+
+function parseBasic(authorization) {
+  if (!authorization) return null;
+  const trimmed = authorization.trim();
+  const match = /^Basic\s+([A-Za-z0-9+/=_-]+)$/i.exec(trimmed);
+  if (!match) return { error: true };
+  let binary;
+  try {
+    const pad = match[1].length % 4 === 0 ? "" : "=".repeat(4 - (match[1].length % 4));
+    binary = atob(match[1].replace(/-/g, "+").replace(/_/g, "/") + pad);
+  } catch {
+    return { error: true };
+  }
+  const split = binary.indexOf(":");
+  if (split < 0) return { error: true };
+  let id;
+  let secret;
+  try {
+    id = decodeURIComponent(binary.slice(0, split).replace(/\+/g, " "));
+    secret = decodeURIComponent(binary.slice(split + 1).replace(/\+/g, " "));
+  } catch {
+    return { error: true };
+  }
+  if (!id) return { error: true };
+  return { id, secret };
+}
+
 export function metadata(origin) {
   return {
     issuer: origin,
@@ -204,9 +263,9 @@ export function metadata(origin) {
     registration_endpoint: `${origin}/oauth/register`,
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
-    grant_types_supported: ["authorization_code"],
+    grant_types_supported: GRANT_ORDER,
     code_challenge_methods_supported: ["S256"],
-    token_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: AUTH_METHODS,
     scopes_supported: [SCOPE],
   };
 }
@@ -232,31 +291,41 @@ export async function registerClient(body, secret, now) {
   for (const uri of uris) {
     if (!isAllowedRedirect(uri)) return { error: "invalid_redirect_uri", description: "redirect_uri is not allowed" };
   }
-  const grants = body.grant_types === undefined ? ["authorization_code"] : body.grant_types;
-  const responses = body.response_types === undefined ? ["code"] : body.response_types;
+  // Unknown grant names and unknown metadata fields are ignored. authorization_code
+  // is required. refresh_token is kept when the client asks for it.
+  const grants = selectKnown(body.grant_types, GRANT_ORDER, "authorization_code");
+  if (grants.error) {
+    return { error: "invalid_client_metadata", description: "authorization_code is required" };
+  }
+  const responses = selectKnown(body.response_types, ["code"], "code");
+  if (responses.error) {
+    return { error: "invalid_client_metadata", description: "response_types must include code" };
+  }
   const authMethod = body.token_endpoint_auth_method === undefined ? "none" : body.token_endpoint_auth_method;
-  if (!Array.isArray(grants) || grants.length !== 1 || grants[0] !== "authorization_code") {
-    return { error: "invalid_client_metadata", description: "only authorization_code is supported" };
+  if (typeof authMethod !== "string" || !AUTH_METHODS.includes(authMethod)) {
+    return { error: "invalid_client_metadata", description: "unsupported token_endpoint_auth_method" };
   }
-  if (!Array.isArray(responses) || responses.length !== 1 || responses[0] !== "code") {
-    return { error: "invalid_client_metadata", description: "only response type code is supported" };
-  }
-  if (authMethod !== "none" || body.client_secret) {
-    return { error: "invalid_client_metadata", description: "this server only registers public clients" };
-  }
-  const clientId = await signPayload({ v: 1, typ: "client", uris, iat: now, exp: now + CLIENT_TTL }, secret);
+  const clientId = await signPayload(
+    { v: 1, typ: "client", uris, grants: grants.granted, auth: authMethod, iat: now, exp: now + CLIENT_TTL },
+    secret,
+  );
   if (!clientId) return { error: "server_error", description: "GROKWALLET_OAUTH_HMAC_KEY is not configured" };
-  return {
-    client: {
-      client_id: clientId,
-      client_id_issued_at: now,
-      redirect_uris: uris,
-      grant_types: ["authorization_code"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "none",
-      scope: SCOPE,
-    },
+  const client = {
+    client_id: clientId,
+    client_id_issued_at: now,
+    redirect_uris: uris,
+    grant_types: grants.granted,
+    response_types: ["code"],
+    token_endpoint_auth_method: authMethod,
+    scope: SCOPE,
   };
+  if (authMethod !== "none") {
+    const clientSecret = await deriveClientSecret(clientId, secret);
+    if (!clientSecret) return { error: "server_error", description: "GROKWALLET_OAUTH_HMAC_KEY is not configured" };
+    client.client_secret = clientSecret;
+    client.client_secret_expires_at = now + CLIENT_TTL;
+  }
+  return { client };
 }
 
 function validState(state) {
@@ -331,13 +400,80 @@ export async function completeAuthorization(searchParams, secret, now) {
   return { redirect: redirectTarget(txn.redir, { code, state: txn.state || "" }) };
 }
 
-export async function exchangeToken(params, secret, now) {
-  if ((params.get("grant_type") || "") !== "authorization_code") {
-    return { status: 400, error: "unsupported_grant_type" };
+async function authenticateClient(params, authorization, secret, now) {
+  const basic = parseBasic(authorization);
+  if (basic && basic.error) return { status: 401, error: "invalid_client" };
+  let clientId = params.get("client_id") || "";
+  let presented = params.get("client_secret") || "";
+  if (basic && !basic.error) {
+    if (clientId && clientId !== basic.id) return { status: 401, error: "invalid_client" };
+    if (!clientId) clientId = basic.id;
+    if (!presented) presented = basic.secret;
   }
-  const clientId = params.get("client_id") || "";
   const client = await readPayload(clientId, secret, "client", now);
-  if (!client) return { status: 401, error: "invalid_client" };
+  if (!client || !Array.isArray(client.uris)) return { status: 401, error: "invalid_client" };
+  const method = client.auth || "none";
+  if (method === "none") return { client, clientId };
+  const expected = await deriveClientSecret(clientId, secret);
+  if (!presented || !expected || !sameString(presented, expected)) return { status: 401, error: "invalid_client" };
+  return { client, clientId };
+}
+
+function grantsOf(client) {
+  return Array.isArray(client.grants) ? client.grants : ["authorization_code"];
+}
+
+function resourceMatches(requested, audience) {
+  if (!requested) return true;
+  let parsed = null;
+  try {
+    parsed = parseConnectorResource(requested, new URL(audience).origin);
+  } catch {
+    parsed = null;
+  }
+  return Boolean(parsed && parsed.canonical === audience);
+}
+
+async function tokenBody(audience, clientId, client, secret, now) {
+  const access = await signPayload(
+    { v: 1, typ: "token", aud: audience, sub: "link", scope: SCOPE, iat: now, exp: now + TOKEN_TTL },
+    secret,
+  );
+  if (!access) return { status: 503, error: "server_error" };
+  const body = { access_token: access, token_type: "Bearer", expires_in: TOKEN_TTL, scope: SCOPE };
+  if (grantsOf(client).includes("refresh_token")) {
+    const refresh = await signPayload(
+      {
+        v: 1,
+        typ: "refresh",
+        aud: audience,
+        cid: await sha256Hex(clientId),
+        scope: SCOPE,
+        iat: now,
+        exp: now + REFRESH_TTL,
+      },
+      secret,
+    );
+    if (!refresh) return { status: 503, error: "server_error" };
+    body.refresh_token = refresh;
+  }
+  return { status: 200, body };
+}
+
+export async function exchangeToken(params, secret, now, authorization = "") {
+  const authed = await authenticateClient(params, authorization, secret, now);
+  if (authed.error) return { status: authed.status, error: authed.error };
+  const { client, clientId } = authed;
+  const grant = params.get("grant_type") || "";
+  if (grant === "refresh_token") {
+    if (!grantsOf(client).includes("refresh_token")) return { status: 400, error: "unauthorized_client" };
+    const refresh = await readPayload(params.get("refresh_token") || "", secret, "refresh", now);
+    if (!refresh || refresh.scope !== SCOPE || typeof refresh.aud !== "string") return { status: 400, error: "invalid_grant" };
+    if ((await sha256Hex(clientId)) !== refresh.cid) return { status: 400, error: "invalid_grant" };
+    if (!resourceMatches(params.get("resource") || "", refresh.aud)) return { status: 400, error: "invalid_target" };
+    return tokenBody(refresh.aud, clientId, client, secret, now);
+  }
+  if (grant !== "authorization_code") return { status: 400, error: "unsupported_grant_type" };
   const code = await readPayload(params.get("code") || "", secret, "code", now);
   if (!code) return { status: 400, error: "invalid_grant" };
   if ((await sha256Hex(clientId)) !== code.cid) return { status: 400, error: "invalid_grant" };
@@ -352,29 +488,12 @@ export async function exchangeToken(params, secret, now) {
   // resource is optional. When the client sends it, it must be the connector
   // URL bound into this code at /oauth/authorize. When it is absent, that
   // bound URL is the audience.
-  const requestedResource = params.get("resource") || "";
-  if (requestedResource) {
-    let parsed = null;
-    try {
-      parsed = parseConnectorResource(requestedResource, new URL(code.aud).origin);
-    } catch {
-      parsed = null;
-    }
-    if (!parsed || parsed.canonical !== code.aud) return { status: 400, error: "invalid_target" };
-  }
+  if (!resourceMatches(params.get("resource") || "", code.aud)) return { status: 400, error: "invalid_target" };
   const verifier = params.get("code_verifier") || "";
   if (!validVerifier(verifier)) return { status: 400, error: "invalid_grant" };
   const expected = await codeChallengeS256(verifier);
   if (!sameString(expected, code.chal)) return { status: 400, error: "invalid_grant" };
-  const access = await signPayload(
-    { v: 1, typ: "token", aud: code.aud, sub: "link", scope: SCOPE, iat: now, exp: now + TOKEN_TTL },
-    secret,
-  );
-  if (!access) return { status: 503, error: "server_error" };
-  return {
-    status: 200,
-    body: { access_token: access, token_type: "Bearer", expires_in: TOKEN_TTL, scope: SCOPE },
-  };
+  return tokenBody(code.aud, clientId, client, secret, now);
 }
 
 export async function accessTokenAudience(token, secret, now) {
