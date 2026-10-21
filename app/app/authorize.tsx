@@ -4,6 +4,7 @@ import { PrivyProvider, useCreateWallet, usePrivy } from "@privy-io/react-auth";
 import { useCreateWallet as useCreateSolanaWallet } from "@privy-io/react-auth/solana";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { connectCardReturnPath } from "../lib/oauth-return";
 
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "";
 const CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || "";
@@ -93,6 +94,14 @@ function Approval() {
             : `Denial was rejected (${response.status}).`,
         );
       }
+      if (action === "approve") {
+        const back = connectCardReturnPath(params.get("oauth_return"), userCode);
+        if (back) {
+          setMessage("Approved. Returning to the Connect card.");
+          window.location.assign(back);
+          return;
+        }
+      }
       setMessage(action === "approve" ? "Approved. You can return to the chat." : "Denied. The agent cannot use this account.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The request failed.");
@@ -155,6 +164,9 @@ function Approval() {
         </p>
         <p className="muted">Confirm the code below matches the code in your chat before you approve.</p>
         {userCode ? <div className="code">{userCode}</div> : <p>No user code was in this link. Open the URL the agent printed.</p>}
+        {connectCardReturnPath(params.get("oauth_return"), userCode) ? (
+          <p className="muted">After you approve, this window returns to the Connect card. Denying stays on this page.</p>
+        ) : null}
         {!ready ? <p>Checking your Privy session.</p> : null}
         {ready && !authenticated ? (
           <div className="row">

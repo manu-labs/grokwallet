@@ -10,6 +10,7 @@ import {
   walletRpc,
 } from "./privy.js";
 import { chainConfig, ethBalance, solBalance, solanaBlockhash } from "./balances.js";
+import { connectorUrlForUserCode } from "./home.js";
 import { buildSolTransfer } from "./solana.js";
 import { assertWithinCap, formatCaps, normalizeCaps, policyDocuments, setCapAmount } from "./policy.js";
 import { ETH_DECIMALS, SOL_DECIMALS, formatUnits, parseUnits, toHexQuantity } from "./units.js";
@@ -108,6 +109,7 @@ export async function login() {
     formatLoginPrompt({
       verificationUriComplete: device.verification_uri_complete,
       userCode: device.user_code,
+      connectorUrl: connectorUrlForUserCode(device.user_code),
     }),
   );
   process.stderr.write("waiting for approval\n");
@@ -359,6 +361,7 @@ export const HELP = `grokwallet commands:
   cap show|set|clear|policy [--eth 0.01] [--sol 0.01]
   logout
 
-Stdout from login is only the verification URL and user code until approval finishes.
-Tokens and signing keys are never printed.
+Stdout from login is the verification URL, the user code, and a connector URL.
+The connector URL embeds only the public user code.
+Tokens, the device code, and signing keys are never printed.
 `;

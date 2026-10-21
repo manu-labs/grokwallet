@@ -140,6 +140,23 @@ export function renderHeaders(hashes) {
     `  Permissions-Policy: ${PERMISSIONS_POLICY}`,
     `  Strict-Transport-Security: ${HSTS}`,
     "",
+    "# Connect-card routes are JSON and redirects served by Pages Functions.",
+    "# These rules do not replace the approval-page CSP on /*.",
+    "/oauth/*",
+    "  X-Content-Type-Options: nosniff",
+    "  Referrer-Policy: no-referrer",
+    "  Cache-Control: no-store",
+    "",
+    "/mcp/*",
+    "  X-Content-Type-Options: nosniff",
+    "  Referrer-Policy: no-referrer",
+    "  Cache-Control: no-store",
+    "",
+    "/.well-known/*",
+    "  X-Content-Type-Options: nosniff",
+    "  Referrer-Policy: no-referrer",
+    "  Cache-Control: no-store",
+    "",
   ];
   return lines.join("\n");
 }

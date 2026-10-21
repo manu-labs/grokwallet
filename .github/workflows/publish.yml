@@ -101,6 +101,16 @@ jobs:
           mv dist/unpack/out dist/site
           node scripts/hash-tree.mjs dist/site > /tmp/deployed.MANIFEST
           diff -u dist/approval-page.MANIFEST /tmp/deployed.MANIFEST
+      - name: Require the Connect card functions
+        run: |
+          set -eu
+          test -f functions/oauth/authorize.js
+          test -f functions/oauth/token.js
+          test -f functions/oauth/register.js
+          test -f functions/oauth/complete.js
+          test -f 'functions/mcp/c/[code].js'
+          test -f functions/.well-known/oauth-authorization-server.js
+          test -f functions/.well-known/oauth-protected-resource.js
       - name: Deploy the attested files to Cloudflare Pages
         id: pages
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
