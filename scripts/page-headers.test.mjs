@@ -24,6 +24,9 @@ test("rendered headers carry the CSP and X-Frame-Options", () => {
   assert.equal(text.includes(scriptHash("var approval = 1;")), true);
   assert.equal(text.includes("X-Frame-Options: DENY"), true);
   assert.equal(text.includes("frame-ancestors 'none'"), true);
+  assert.match(text, /\/oauth\/\*/);
+  assert.match(text, /\/mcp\/\*/);
+  assert.ok(text.indexOf("X-Frame-Options: DENY") < text.indexOf("/oauth/*"));
 });
 
 test("a policy without X-Frame-Options is rejected", () => {

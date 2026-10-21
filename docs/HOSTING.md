@@ -4,7 +4,7 @@ This is the list for the person who owns the GitHub repo, the Privy app, and the
 
 The approval page is a static export. The publish workflow builds it once, attests that output, uploads those exact files to Cloudflare Pages, and pins the same files to IPFS when a pinning token is configured. Cloudflare Pages is the host owners open. IPFS is the content-addressed copy used to check that host.
 
-The page calls Privy from the browser with the owner's user access token (`POST https://auth.privy.io/api/oauth/v2/device_verify`). The agent-authorization recipe shows that call with `privy-app-id` and `Authorization: Bearer <user access token>` only. No server-side secret is required, so the site stays a static export.
+The page calls Privy from the browser with the owner's user access token (`POST https://auth.privy.io/api/oauth/v2/device_verify`). The agent-authorization recipe shows that call with `privy-app-id` and `Authorization: Bearer <user access token>` only. No server-side secret is required for that call. The static export still has no Privy secret. The Connect card adds Pages Functions beside that export. Those functions sign their own OAuth state with `GROKWALLET_OAUTH_HMAC_KEY`. They never call Privy.
 
 https://docs.privy.io/recipes/agent-integrations/agent-authorization
 
@@ -32,6 +32,7 @@ The React SDK rejects an app id that is not exactly 25 characters. Copy the id f
 | `CLOUDFLARE_API_TOKEN` | GitHub Actions secret | Yes. Never commit it |
 | `CLOUDFLARE_ACCOUNT_ID` | GitHub Actions secret | Yes. Never commit it. It identifies the account; treat it as a secret anyway |
 | `IPFS_PINNING_TOKEN` | GitHub Actions secret. A Pinata JWT that can call `pinFileToIPFS`. Leave it unset to skip IPFS | Yes. Never commit it |
+| `GROKWALLET_OAUTH_HMAC_KEY` | Cloudflare Pages secret on the `grokwallet` project, Production environment | Yes. It signs Connect-card OAuth codes. It is not a Privy secret and it is not a GitHub Actions secret |
 
 ## 3. GitHub Actions
 
@@ -52,7 +53,7 @@ Repository secrets:
 
 CI (`.github/workflows/ci.yml`) runs on pull requests and on `main`. It does not need the app id, Cloudflare credentials, or the pinning token. It lints, tests, and builds the static page twice to compare file hashes.
 
-Publish (`.github/workflows/publish.yml`) runs when you push a tag `v*` and when you start it by hand. It builds the page once with `PRIVY_APP_ID`, packs `app/out` into `grokwallet-app.tar.gz`, attests that archive (and the CLI archive, the manifest, and `SHA256SUMS`) with `actions/attest-build-provenance`, extracts the attested archive, and uploads that directory with `cloudflare/wrangler-action` (`pages deploy`, Wrangler `4.151.3`). When `IPFS_PINNING_TOKEN` is set, it pins that same directory and writes the CID to the job summary. A tag also opens a GitHub release. The job stops before the build if either Cloudflare secret is missing.
+Publish (`.github/workflows/publish.yml`) runs when you push a tag `v*` and when you start it by hand. It builds the page once with `PRIVY_APP_ID`, packs `app/out` into `grokwallet-app.tar.gz`, attests that archive (and the CLI archive, the manifest, and `SHA256SUMS`) with `actions/attest-build-provenance`, extracts the attested archive, and uploads that directory with `cloudflare/wrangler-action` (`pages deploy`, Wrangler `4.151.3`). The command runs from the repo root, so Wrangler also uploads the `functions/` directory next to `dist/site`. Those functions are not inside the attested tarball. When `IPFS_PINNING_TOKEN` is set, it pins the static directory only and writes the CID to the job summary. A tag also opens a GitHub release. The job stops before the build if either Cloudflare secret is missing. It does not read `GROKWALLET_OAUTH_HMAC_KEY`; that value lives on the Pages project.
 
 The bot template tells the agent to install tag `v0.1.0`. The first publish should be that tag, from the commit whose template you are distributing:
 
@@ -78,6 +79,26 @@ Create the project before the first publish. The workflow uses direct upload. It
 3. Create an API token: **My Profile → API Tokens → Create Token → Custom token**. Permission: **Account → Cloudflare Pages → Edit**. Account resources: the account that owns the project. Copy the token into the `CLOUDFLARE_API_TOKEN` Actions secret. Copy the account id into `CLOUDFLARE_ACCOUNT_ID`.
 4. Push the tag (or run the Publish workflow by hand). The job summary includes the deployment URL and the `*.pages.dev` alias (`pages-deployment-alias-url`).
 5. Open the alias over HTTPS and confirm the approval page loads. The Privy SDK refuses embedded wallets on plain HTTP, except localhost. Direct upload serves the attested files as static assets, including the query string on `user_code`.
+6. Add the Connect-card HMAC key before you rely on the card. In the Pages project open **Settings → Variables and Secrets**. Environment: **Production**. Add a secret named `GROKWALLET_OAUTH_HMAC_KEY`. Generate it with `openssl rand -base64 32` and use the whole line (it is longer than 32 characters). Turn on encryption if the dashboard offers it. Do not put this value in GitHub, in the bot, or in the static export. A Pages environment change is picked up by the next deployment. If the secret is missing, the approval page still works and the OAuth routes return 503.
+
+### Connect card
+
+The CLI prints `connector_url: https://grokwallet.fun/mcp/c/<user_code>`. The path segment is the public user code. `https://grokwallet.fun/mcp?code=<user_code>` is the same connector. The device code is not in either URL.
+
+Grok Bot adds that URL with `AddMcpServer`, then `AuthenticateMcpServer` (account `default`) opens the Connect card. The function answers MCP OAuth: protected-resource metadata, authorization-server metadata, dynamic client registration, `/oauth/authorize`, and `/oauth/token` with PKCE S256. `/oauth/authorize` redirects to `https://grokwallet.fun/?user_code=<user_code>&oauth_return=<signed token>`. After the browser approves, the page navigates to `/oauth/complete` on this origin, which redirects to the bot's registered `redirect_uri` with an authorization code. The access token from `/oauth/token` can call only `link_status`.
+
+Codes and tokens are HMAC-signed with `GROKWALLET_OAUTH_HMAC_KEY`. The worker does not store them. There is no KV namespace. IPFS does not run these routes. A gateway copy of the static files cannot show the Connect card.
+
+Redirect URIs are allowlisted: `cursor://anysphere.cursor-mcp/oauth/callback`, `https://www.cursor.com/agents/mcp/oauth/callback`, `https://www.cursor.com/bot/mcp/oauth/callback`, and `http://localhost` or `http://127.0.0.1` with any port and path `/callback`. Anything else is rejected and is not used as a `Location`.
+
+After a publish that includes `functions/`, this check should be HTTP 401 with a `resource_metadata` URL, not a static 404:
+
+```sh
+curl -si -X POST https://grokwallet.fun/mcp/c/ABCD-1234 \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+```
 
 ### Custom domain
 
@@ -103,7 +124,7 @@ The workflow does not create the DNS record. Adding the domain is a dashboard st
 
 ### Security headers
 
-`npm run build` writes `app/out/_headers` after the Next.js export. Cloudflare Pages reads that file from the upload and attaches the headers to every path. The file is part of the attested archive and the manifest. Pages does not need to serve `/_headers` as a page. The IPFS copy still contains the file so its bytes can be compared.
+`npm run build` writes `app/out/_headers` after the Next.js export. Cloudflare Pages reads that file from the upload. The `/*` rule is the approval page: the Content Security Policy and `X-Frame-Options: DENY` stay on that rule. `/oauth/*`, `/mcp/*`, and `/.well-known/*` are separate rules for the Connect-card responses. They set `nosniff`, `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`. They do not carry the approval-page CSP. The Pages Functions also set those response headers themselves. The file is part of the attested archive and the manifest. Pages does not need to serve `/_headers` as a page. The IPFS copy still contains the file so its bytes can be compared.
 
 The policy is the base Content Security Policy from Privy's CSP guide, plus `X-Frame-Options: DENY`. `frame-ancestors 'none'` is in the CSP. Together they are the two production-checklist items (CSP for the embedded-wallet iframe, and X-Frame options). Privy's dashboard links the second item to an integration security guide. The current docs for that checklist are:
 
@@ -175,6 +196,7 @@ https://docs.privy.io/controls/policies/overview
 | Owner passphrase | The owner logs out (`grokwallet logout`), sets a new `GROKWALLET_PASSPHRASE`, and runs `login` again. Logout deletes the local file. It does not revoke Privy. Revoke old sessions on the approval page |
 | Privy app secret | Rotate it in the dashboard if you have ever created one. This repo does not use it. Rotation does not by itself revoke agent grants |
 | Agent grant | The owner presses Revoke on the approval page, which calls `DELETE /api/oauth/v2/grants/{id}`. The refresh token stops working. An already issued access token can keep working until it expires, up to 15 minutes |
-| Approval page | Tag a new release. The workflow uploads the new attested tree to the `main` branch of the Pages project. If you pin IPFS, update the DNSLink TXT record to the new CID. The custom domain and the Privy verification URI stay the same |
+| Approval page | Tag a new release. The workflow uploads the new attested tree to the `main` branch of the Pages project and uploads `functions/` from that commit. If you pin IPFS, update the DNSLink TXT record to the new CID. The custom domain and the Privy verification URI stay the same |
+| Connect-card HMAC key | Create a new `GROKWALLET_OAUTH_HMAC_KEY` on the Pages project and delete the old one. Outstanding Connect-card codes stop verifying. Privy sessions on the CLI are unchanged |
 
 There is no app signing key in this repository to rotate. Wallet keys stay inside Privy, on the owner's account.

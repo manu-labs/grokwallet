@@ -6,8 +6,10 @@ import { createHpkeRecipient } from "./hpke.js";
 
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
-export function formatLoginPrompt({ verificationUriComplete, userCode }) {
-  return `verification_uri_complete: ${verificationUriComplete}\nuser_code: ${userCode}\n`;
+export function formatLoginPrompt({ verificationUriComplete, userCode, connectorUrl = "" }) {
+  const lines = [`verification_uri_complete: ${verificationUriComplete}`, `user_code: ${userCode}`];
+  if (connectorUrl) lines.push(`connector_url: ${connectorUrl}`);
+  return `${lines.join("\n")}\n`;
 }
 
 async function readError(response) {

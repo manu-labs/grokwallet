@@ -4,6 +4,7 @@ import { assertWithinCap, policyDocuments, setCapAmount } from "../src/policy.js
 import { base58Decode, base58Encode, buildSolTransfer, SYSTEM_PROGRAM } from "../src/solana.js";
 import { formatUnits, parseUnits } from "../src/units.js";
 import { formatLoginPrompt, pollDeviceToken, DEVICE_GRANT } from "../src/privy.js";
+import { connectorUrlForUserCode } from "../src/home.js";
 import { parseArgs } from "../src/cli.js";
 
 test("parses ETH and SOL amounts without floating point", () => {
@@ -45,14 +46,20 @@ test("local spend cap blocks an over-cap send and prints a Privy policy document
   assert.equal(docs[1].rules[0].conditions[0].value, "500000000");
 });
 
-test("login stdout contains the user code and not the device code", () => {
+test("login stdout contains the user code and connector URL, not the device code", () => {
   const deviceCode = "device-secret-value";
+  const connectorUrl = connectorUrlForUserCode("ABCD-1234");
+  assert.equal(connectorUrl, "https://grokwallet.fun/mcp/c/ABCD-1234");
+  assert.equal(connectorUrlForUserCode("not a code"), "");
+  assert.equal(connectorUrlForUserCode("../ABCD-1234"), "");
   const text = formatLoginPrompt({
     verificationUriComplete: "https://grokwallet.fun/?user_code=ABCD-1234",
     userCode: "ABCD-1234",
+    connectorUrl,
   });
   assert.match(text, /verification_uri_complete: https:\/\/grokwallet\.fun\/\?user_code=ABCD-1234\n/);
   assert.match(text, /user_code: ABCD-1234\n/);
+  assert.match(text, /connector_url: https:\/\/grokwallet\.fun\/mcp\/c\/ABCD-1234\n/);
   assert.equal(text.includes(deviceCode), false);
 });
 
