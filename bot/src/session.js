@@ -102,8 +102,13 @@ export function readConfig() {
   return JSON.parse(readFileSync(file, "utf8"));
 }
 
-export function writeConfig(config) {
-  atomicWrite(configPath(), `${JSON.stringify({ appId: config.appId }, null, 2)}\n`, 0o600);
+export function writeConfig(patch) {
+  const current = readConfig();
+  const source = { ...current, ...patch };
+  const next = {};
+  if (source.appId) next.appId = source.appId;
+  if (source.wcProjectId) next.wcProjectId = source.wcProjectId;
+  atomicWrite(configPath(), `${JSON.stringify(next, null, 2)}\n`, 0o600);
 }
 
 // Public Privy app id for this distribution. Not a secret. Env and ~/.grokwallet/config.json override it.

@@ -102,6 +102,33 @@ Caps:
 
 `sign-message --message-file` signs the file's UTF-8 bytes exactly, including line breaks and a trailing newline if the file has one. `--message-file -` or `--message -` reads stdin the same way. That is what a multi-line Lighter key-registration message needs. `--message` and `--message-file` together are refused. The 2000-character limit is unchanged.
 
+## WalletConnect
+
+A dapp that can pair with a wallet over WalletConnect v2 can use this CLI as the wallet. The published build does not embed a project id, unlike the public Privy app id. Create a project at [dashboard.reown.com](https://dashboard.reown.com) and export the 32-character hex project id:
+
+```sh
+export GROKWALLET_WC_PROJECT_ID="your 32 hex characters"
+```
+
+`wcProjectId` in `~/.grokwallet/config.json` is the other place the CLI reads. The env var wins. Do not commit the id. It is a client identifier for the relay, not an app secret, and each owner should use their own so the relay quota is theirs.
+
+`wc pair` starts a background process that holds the relay connection and stores pairing keys under `~/.grokwallet/wc` with mode `0600`. Those keys are not the Ethereum key and not the Privy token. The foreground command signs, and only after `--yes`, through the same Privy path as `sign-message`, `sign-typed-data`, and `send-eth`.
+
+```sh
+node bot/bin/grokwallet.js wc pair 'wc:...'
+node bot/bin/grokwallet.js wc proposals
+node bot/bin/grokwallet.js wc approve-proposal 1 --yes
+node bot/bin/grokwallet.js wc requests
+node bot/bin/grokwallet.js wc approve 2 --yes
+node bot/bin/grokwallet.js wc reject 2
+node bot/bin/grokwallet.js wc sessions
+node bot/bin/grokwallet.js wc disconnect <topic>
+```
+
+The summary's first line is the origin. `MISMATCH` means the WalletConnect Verify origin and the dapp's claimed URL do not agree. `verify: UNKNOWN` means Verify did not attest the origin. The claimed name and URL are always labeled untrusted. Approve the proposal id or request id you were shown. A later event cannot replace that payload: the daemon answers the relay only when the hash still matches.
+
+`personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`, and a one-call `wallet_sendCalls` use the same caps as the matching commands. ERC-20 `transfer` and `transferFrom` inside a WalletConnect transaction are checked against the token cap instead of being redirected to `send-erc20`. `eth_sign` and other raw-hash methods are rejected on arrival. A `wallet_sendCalls` batch of more than one call is refused, because Privy is asked one `eth_sendTransaction` at a time. Read-only methods such as `eth_accounts` and `eth_chainId` still wait for `wc approve --yes`. Nothing is auto-approved.
+
 ## Quickstart for the repo owner
 
 The owner hosts the approval page and the Privy app. Wallet owners do not do this.

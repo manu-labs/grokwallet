@@ -57,6 +57,8 @@ The approval page keeps `Content-Security-Policy` with `frame-ancestors 'none'` 
 
 `sign-message` and `sign-typed-data` do not transfer a balance. They print the exact message or the typed-data domain, primary type, and message, and they refuse to sign without `--yes`. A typed-data signature can approve another signer. Hyperliquid `approveAgent` is one case: its domain `chainId` is `0x66eee`, which is not Ethereum. The ETH cap does not interpret that signature.
 
+WalletConnect requests use those same checks. The relay process does not hold the Privy token or the signing key. A proposal or request is answered only for the id that was summarized, and only if its payload hash is unchanged. Dapp name, URL, and other metadata are untrusted. The summary shows the WalletConnect Verify origin and warns when it is missing, marked a scam, or different from the claimed URL. `eth_sign` and other raw-hash methods are rejected without a prompt. An ERC-20 `transfer` or `transferFrom` hidden in `eth_sendTransaction` or `wallet_sendCalls` still needs the token cap. A batch of more than one call is refused.
+
 ## Scope
 
 In scope: the `grokwallet` CLI, the static approval page, the Pages Functions under `functions/`, the GitHub workflows, and the bot template in this repository.

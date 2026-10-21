@@ -35,6 +35,34 @@ export function erc20SpendSelector(data) {
   return null;
 }
 
+function addressFromWord(word) {
+  if (!/^[0-9a-f]{64}$/.test(word)) return null;
+  if (!/^0{24}$/.test(word.slice(0, 24))) return null;
+  return `0x${word.slice(24)}`;
+}
+
+export function decodeErc20Spend(data) {
+  const normalized = normalizeCalldata(data);
+  const selector = erc20SpendSelector(normalized);
+  if (!selector) return null;
+  const words = normalized.slice(10);
+  if (selector === TRANSFER_SELECTOR) {
+    if (words.length !== 128) {
+      throw new CliError("ERC-20 transfer calldata is not a single address and amount. Refusing it.");
+    }
+    const to = addressFromWord(words.slice(0, 64));
+    if (!to) throw new CliError("ERC-20 transfer recipient is not an address. Refusing it.");
+    return { selector, to, amount: BigInt(`0x${words.slice(64)}`) };
+  }
+  if (words.length !== 192) {
+    throw new CliError("ERC-20 transferFrom calldata is not two addresses and an amount. Refusing it.");
+  }
+  const from = addressFromWord(words.slice(0, 64));
+  const to = addressFromWord(words.slice(64, 128));
+  if (!from || !to) throw new CliError("ERC-20 transferFrom addresses are not valid. Refusing it.");
+  return { selector, from, to, amount: BigInt(`0x${words.slice(128)}`) };
+}
+
 export function encodeErc20Transfer(to, amount) {
   const address = requireAddress(to, "recipient").slice(2).toLowerCase().padStart(64, "0");
   const raw = typeof amount === "bigint" ? amount : BigInt(amount);
