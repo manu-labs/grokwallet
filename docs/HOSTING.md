@@ -55,14 +55,14 @@ CI (`.github/workflows/ci.yml`) runs on pull requests and on `main`. It does not
 
 Publish (`.github/workflows/publish.yml`) runs when you push a tag `v*` and when you start it by hand. It builds the page once with `PRIVY_APP_ID`, packs `app/out` into `grokwallet-app.tar.gz`, attests that archive (and the CLI archive, the manifest, and `SHA256SUMS`) with `actions/attest-build-provenance`, extracts the attested archive, and uploads that directory with `cloudflare/wrangler-action` (`pages deploy`, Wrangler `4.151.3`). The command runs from the repo root, so Wrangler also uploads the `functions/` directory next to `dist/site`. Those functions are not inside the attested tarball. When `IPFS_PINNING_TOKEN` is set, it pins the static directory only and writes the CID to the job summary. A tag also opens a GitHub release. The job stops before the build if either Cloudflare secret is missing. It does not read `GROKWALLET_OAUTH_HMAC_KEY`; that value lives on the Pages project.
 
-The bot template tells the agent to install tag `v0.2.1`. Publish that tag from the commit whose template you are distributing:
+The bot template tells the agent to install tag `v0.2.2`. Publish that tag from the commit whose template you are distributing:
 
 ```sh
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.2.2
+git push origin v0.2.2
 ```
 
-Leave tags `v0.1.0` and `v0.2.0` where they are.
+Leave tags `v0.1.0`, `v0.2.0`, and `v0.2.1` where they are.
 
 If you need a different tag, change the tag in `template/grokwallet.json` in the same commit, then tag that commit.
 
@@ -87,7 +87,7 @@ Create the project before the first publish. The workflow uses direct upload. It
 
 The CLI prints `connector_url: https://grokwallet.fun/mcp/c/<user_code>`. The path segment is the public user code. `https://grokwallet.fun/mcp?code=<user_code>` is the same connector. The device code is not in either URL.
 
-The getting-started skill adds that URL with `AddMcpServer`, then `AuthenticateMcpServer` (account `default`) opens the Connect card. It removes an older connector named GrokWallet Link first, and it removes the connector again after the CLI prints approved. The plain approval link is shown only after the card returns an error. The function answers MCP OAuth: protected-resource metadata, authorization-server metadata, dynamic client registration, `/oauth/authorize`, and `/oauth/token` with PKCE S256. `/oauth/authorize` redirects to `https://grokwallet.fun/?user_code=<user_code>&oauth_return=<signed token>`. After the browser approves, the page navigates to `/oauth/complete` on this origin, which redirects to the bot's registered `redirect_uri` with an authorization code. The access token from `/oauth/token` can call only `link_status` and lasts 30 days. `grant_type=refresh_token` mints another one.
+The getting-started skill adds that URL with `AddMcpServer`, then `AuthenticateMcpServer` (account `default`) opens the Connect card. It removes an older connector named GrokWallet Link first, and it removes the connector again after the CLI prints approved. The plain approval link is shown only after the card returns an error. The function answers MCP OAuth: protected-resource metadata, authorization-server metadata, dynamic client registration, `/oauth/authorize`, and `/oauth/token` with PKCE S256. `/oauth/authorize` redirects to `https://grokwallet.fun/?user_code=<user_code>&oauth_return=<signed token>`. After `device_verify` succeeds in that window, the page POSTs `/oauth/proof` and then opens `/oauth/complete` with the proof. That route redirects to the bot's registered `redirect_uri` with an authorization code only when the proof is bound to that user code and that request. Without the proof the response is HTTP 400 and does not redirect. Deny redirects the client with `error=access_denied`. The access token from `/oauth/token` can call only `link_status` and lasts 30 days. `grant_type=refresh_token` mints another one.
 
 Codes and tokens are HMAC-signed with `GROKWALLET_OAUTH_HMAC_KEY`. The worker does not store them. There is no KV namespace. IPFS does not run these routes. A gateway copy of the static files cannot show the Connect card.
 

@@ -4,7 +4,8 @@ import { PrivyProvider, useCreateWallet, usePrivy } from "@privy-io/react-auth";
 import { useCreateWallet as useCreateSolanaWallet } from "@privy-io/react-auth/solana";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { connectCardReturnPath } from "../lib/oauth-return";
+import { deviceVerifySucceeded } from "../lib/device-verify";
+import { connectCardDenyPath, connectCardReturnPath, hasConnectCard } from "../lib/oauth-return";
 
 const APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "";
 const CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || "";
@@ -77,9 +78,12 @@ function Approval() {
     try {
       if (action === "approve") await ensureWallets();
       const token = await getAccessToken();
-      if (!token) throw new Error("Privy did not return a user access token.");
+      console.info("device_verify", action, "user_token", Boolean(token));
+      if (!token) throw new Error("Privy did not return a user access token. Log in again in this window.");
       const response = await fetch(`${AUTH_BASE}/api/oauth/v2/device_verify`, {
         method: "POST",
+        redirect: "manual",
+        credentials: "omit",
         headers: {
           "content-type": "application/json",
           "privy-app-id": APP_ID,
@@ -87,22 +91,47 @@ function Approval() {
         },
         body: JSON.stringify({ user_code: userCode, action }),
       });
-      if (!response.ok) {
+      const redirected = response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400);
+      const bodyText = redirected ? "" : await response.text();
+      console.info("device_verify", action, response.status, response.type);
+      if (!deviceVerifySucceeded(response.status, bodyText, redirected)) {
+        console.error("device_verify failed", action, response.status, bodyText.slice(0, 180));
+        const statusText = redirected ? "redirect" : String(response.status);
         throw new Error(
           action === "approve"
-            ? `Approval was rejected (${response.status}). The code may be expired. Ask the agent to run login again.`
-            : `Denial was rejected (${response.status}).`,
+            ? `Approval was rejected (${statusText}). The code may be expired. Ask the agent to run login again.`
+            : `Denial was rejected (${statusText}).`,
         );
       }
-      if (action === "approve") {
-        const back = connectCardReturnPath(params.get("oauth_return"), userCode);
-        if (back) {
-          setMessage("Approved. Returning to the Connect card.");
-          window.location.assign(back);
+      const oauthReturn = params.get("oauth_return");
+      if (action === "deny") {
+        const deny = connectCardDenyPath(oauthReturn, userCode);
+        if (deny) {
+          setMessage("Denied. Returning that to the Connect card.");
+          window.location.assign(deny);
           return;
         }
+        setMessage("Denied. The agent cannot use this account.");
+        return;
       }
-      setMessage(action === "approve" ? "Approved. You can return to the chat." : "Denied. The agent cannot use this account.");
+      if (hasConnectCard(oauthReturn, userCode)) {
+        const proofResponse = await fetch("/oauth/proof", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ txn: oauthReturn, user_code: userCode }),
+        });
+        const proofPayload = (await proofResponse.json().catch(() => null)) as { proof?: string; error?: string } | null;
+        console.info("oauth_proof", proofResponse.status);
+        if (!proofResponse.ok || !proofPayload?.proof) {
+          throw new Error(`Could not record this approval (${proofResponse.status}).`);
+        }
+        const back = connectCardReturnPath(oauthReturn, userCode, proofPayload.proof);
+        if (!back) throw new Error("Could not return to the Connect card.");
+        setMessage("Approved. Returning to the Connect card.");
+        window.location.assign(back);
+        return;
+      }
+      setMessage("Approved. You can return to the chat.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The request failed.");
     } finally {
@@ -164,13 +193,32 @@ function Approval() {
         </p>
         <p className="muted">Confirm the code below matches the code in your chat before you approve.</p>
         {userCode ? <div className="code">{userCode}</div> : <p>No user code was in this link. Open the URL the agent printed.</p>}
-        {connectCardReturnPath(params.get("oauth_return"), userCode) ? (
-          <p className="muted">After you approve, this window returns to the Connect card. Denying stays on this page.</p>
+        {hasConnectCard(params.get("oauth_return"), userCode) ? (
+          <p className="muted">
+            This window was opened by the Connect card. Log in and approve here. Privy is called from this window with
+            your user token. After a successful approval it returns to the card. Deny closes the card.
+          </p>
         ) : null}
         {!ready ? <p>Checking your Privy session.</p> : null}
         {ready && !authenticated ? (
           <div className="row">
-            <button className="primary" type="button" onClick={() => login()}>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => {
+                try {
+                  Promise.resolve(login()).catch((cause: unknown) => {
+                    const text = cause instanceof Error ? cause.message : "Privy login failed in this window.";
+                    console.error("privy login failed", text);
+                    setError(text);
+                  });
+                } catch (cause) {
+                  const text = cause instanceof Error ? cause.message : "Privy login failed in this window.";
+                  console.error("privy login failed", text);
+                  setError(text);
+                }
+              }}
+            >
               Log in with Privy
             </button>
           </div>

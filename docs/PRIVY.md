@@ -57,7 +57,9 @@ https://docs.privy.io/basics/react/advanced/automatic-wallet-creation
 
 `useCreateWallet` from `@privy-io/react-auth` and from `@privy-io/react-auth/solana` runs on Approve if a chain is still missing. The Solana entry imports `@solana/kit` and `@solana-program/memo`, so those are direct dependencies of `app/`. The page does not set `loginMethods`, so the dashboard chooses email, social, or wallet login. It does not mount Telegram login or the funding kit.
 
-The Connect card does not add a Privy call. After a successful `device_verify`, the page may navigate to `/oauth/complete` on the same origin. That route is a Pages Function. It does not receive the user access token, and it does not call Privy. The browser call above is unchanged.
+The Connect card does not add a Privy call. The page POSTs `device_verify` from the approval window with `redirect: "manual"`, `credentials: "omit"`, and `Authorization: Bearer` set to the user access token. Success is status 200 or 204, with an empty body or JSON that has no `error` string and is not `success: false`. A redirect (including an opaque redirect) or an HTML body is a failure. The status and a short body slice are logged to the console, and the error is shown on the page. The page does not navigate on load, on login, or after a failed verify.
+
+After that success, and only then, the page POSTs `/oauth/proof` and navigates to `/oauth/complete` with the returned proof. That route is a Pages Function. It does not receive the user access token, and it does not call Privy. The browser call above is unchanged.
 
 The production checklist's CSP and X-Frame items are delivered as Cloudflare Pages headers. The base directive list is https://docs.privy.io/security/implementation-guide/content-security-policy and the checklist text is https://docs.privy.io/security/implementation-guide/security-checklist. Sources added on top of that base policy, and why, are listed in [HOSTING.md](HOSTING.md).
 

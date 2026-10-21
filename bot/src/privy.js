@@ -6,9 +6,20 @@ import { createHpkeRecipient } from "./hpke.js";
 
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
-export function formatLoginPrompt({ verificationUriComplete, userCode, connectorUrl = "" }) {
+export function formatLoginPrompt({
+  verificationUriComplete,
+  userCode,
+  connectorUrl = "",
+  expiresInSeconds,
+  now = Date.now(),
+}) {
   const lines = [`verification_uri_complete: ${verificationUriComplete}`, `user_code: ${userCode}`];
   if (connectorUrl) lines.push(`connector_url: ${connectorUrl}`);
+  const seconds = Number(expiresInSeconds);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    lines.push(`expires_in: ${seconds}`);
+    lines.push(`expires_at: ${new Date(now + seconds * 1000).toISOString()}`);
+  }
   return `${lines.join("\n")}\n`;
 }
 
@@ -98,7 +109,9 @@ export async function pollDeviceToken({
       continue;
     }
     if (error.code === "access_denied") throw new CliError("the user denied agent access");
-    if (error.code === "expired_token") throw new CliError("the device code expired. Run login again.");
+    if (error.code === "expired_token") {
+      throw new CliError(`the device code expired after ${expiresInSeconds}s. Run login again.`);
+    }
     throw new CliError(`token request failed (${response.status} ${error.code || "error"})`);
   }
   throw new CliError("timed out waiting for approval. Run login again.");

@@ -31,7 +31,7 @@ sequenceDiagram
 
 The approval page is a static Next.js export. The release workflow builds it once, attests that output, and deploys those files to Cloudflare Pages. The export includes a `_headers` file so Pages sends a Content Security Policy and `X-Frame-Options: DENY` on the approval page. The same files are pinned to IPFS when a pinning token is configured, so anyone can compare the live site to the attested bytes. The CLI is a small Node program the bot runs on its own machine.
 
-`login` also prints a connector URL, `https://grokwallet.fun/mcp/c/<user_code>`. That URL is a remote MCP server on the same Pages project. Grok Bot can add it and open a Connect card. The card runs the same approval page. The Pages Function sees the public user code and the OAuth handshake for the card. It does not see the device code, Privy tokens, the signing key, or the owner's Privy session. `device_verify` stays in the browser. The CLI still polls Privy and encrypts the tokens with `GROKWALLET_PASSPHRASE`. If the card cannot be shown, the plain verification URL and user code still work. The connector can be removed after approval. It only answers `link_status`.
+`login` also prints a connector URL, `https://grokwallet.fun/mcp/c/<user_code>`. That URL is a remote MCP server on the same Pages project. Grok Bot can add it and open a Connect card. The card runs the same approval page. The Pages Function sees the public user code and the OAuth handshake for the card. It does not see the device code, Privy tokens, the signing key, or the owner's Privy session. `device_verify` stays in the browser. The function mints an MCP authorization code only after the page, following a successful `device_verify`, presents a short-lived approval proof bound to that user code and that OAuth request. The CLI still polls Privy and encrypts the tokens with `GROKWALLET_PASSPHRASE`. If the card cannot be shown, the plain verification URL and user code still work. The connector can be removed after approval. It only answers `link_status`.
 
 ## Trust model
 
@@ -54,7 +54,7 @@ Treat the machine that holds `~/.grokwallet` as able to spend, up to the cap and
 4. Fund the addresses the bot shows. Incoming transfers do not need the agent.
 5. The bot must show a summary and wait for an explicit yes before it sends or signs, unless you have set a standing rule inside the cap.
 
-The pinned install is release `v0.2.1`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
+The pinned install is release `v0.2.2`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
 
 ## Quickstart for someone running the CLI
 

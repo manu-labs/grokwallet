@@ -13,6 +13,7 @@ export const USER_CODE = /^[A-Za-z0-9]{4,16}(?:-[A-Za-z0-9]{4,16})?$/;
 const CLIENT_TTL = 90 * 24 * 60 * 60;
 const TXN_TTL = 10 * 60;
 const CODE_TTL = 60;
+const PROOF_TTL = 2 * 60;
 // link_status grants nothing about the wallet, so the connector can keep the
 // access token for a month. The refresh token outlives it.
 export const TOKEN_TTL = 30 * 24 * 60 * 60;
@@ -376,12 +377,41 @@ export async function startAuthorization(searchParams, origin, secret, now) {
   return { redirect: approvalUrl(origin, resource.userCode, txn) };
 }
 
+export async function issueApprovalProof(txnToken, userCode, secret, now) {
+  const txn = await readPayload(txnToken, secret, "txn", now);
+  if (!txn || !isAllowedRedirect(txn.redir) || typeof txn.code !== "string") {
+    return { status: 400, error: "invalid_request" };
+  }
+  if (userCode !== txn.code) return { status: 400, error: "invalid_request" };
+  const proof = await signPayload(
+    {
+      v: 1,
+      typ: "approval",
+      code: txn.code,
+      bind: await sha256Hex(txnToken),
+      iat: now,
+      exp: now + PROOF_TTL,
+    },
+    secret,
+  );
+  if (!proof) return { status: 503, error: "server_error" };
+  return { status: 200, body: { proof } };
+}
+
 export async function completeAuthorization(searchParams, secret, now) {
-  const txn = await readPayload(searchParams.get("txn") || "", secret, "txn", now);
+  const txnToken = searchParams.get("txn") || "";
+  const txn = await readPayload(txnToken, secret, "txn", now);
   if (!txn || !isAllowedRedirect(txn.redir) || typeof txn.aud !== "string" || typeof txn.code !== "string") {
     return { status: 400, error: "invalid_request" };
   }
   if ((searchParams.get("user_code") || "") !== txn.code) return { status: 400, error: "invalid_request" };
+  if (searchParams.get("deny") === "1") {
+    return { redirect: redirectTarget(txn.redir, { error: "access_denied", state: txn.state || "" }) };
+  }
+  const proof = await readPayload(searchParams.get("proof") || "", secret, "approval", now);
+  if (!proof || proof.code !== txn.code || proof.bind !== (await sha256Hex(txnToken))) {
+    return { status: 400, error: "access_denied", description: "approval proof required" };
+  }
   const code = await signPayload(
     {
       v: 1,

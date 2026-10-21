@@ -2,6 +2,7 @@ import {
   accessTokenAudience,
   completeAuthorization,
   exchangeToken,
+  issueApprovalProof,
   hmacSecret,
   isPublicHost,
   metadata,
@@ -132,7 +133,7 @@ async function handleMcp(request, url, env, now, canonical) {
       return rpc(id, {
         protocolVersion,
         capabilities: { tools: {} },
-        serverInfo: { name: "grokwallet-link", version: "0.2.1" },
+        serverInfo: { name: "grokwallet-link", version: "0.2.2" },
         instructions:
           "This connector only opens the approval page. Wallet actions stay on the local grokwallet CLI. This server does not receive wallet credentials.",
       });
@@ -227,12 +228,30 @@ export async function handleRequest(request, env = {}, options = {}) {
       return text(result.status || 400, result.description || result.error || "invalid_request");
     }
 
+    if (path === "/oauth/proof") {
+      if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
+      if (!secret) return json(503, { error: "server_error", error_description: "GROKWALLET_OAUTH_HMAC_KEY is not configured" });
+      const type = request.headers.get("content-type") || "";
+      if (!type.includes("application/json")) return json(400, { error: "invalid_request" });
+      const raw = await readBody(request, 8192);
+      if (raw === null) return json(400, { error: "invalid_request" });
+      let body;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        return json(400, { error: "invalid_request" });
+      }
+      const result = await issueApprovalProof(body && body.txn, body && body.user_code, secret, now);
+      if (result.body) return json(result.status, result.body);
+      return json(result.status, { error: result.error });
+    }
+
     if (path === "/oauth/complete") {
       if (request.method !== "GET") return new Response(null, { status: 405, headers: { allow: "GET" } });
       if (!secret) return text(503, "GROKWALLET_OAUTH_HMAC_KEY is not configured");
       const result = await completeAuthorization(url.searchParams, secret, now);
       if (result.redirect) return redirect(result.redirect);
-      return text(result.status || 400, "invalid_request");
+      return text(result.status || 400, result.error || "invalid_request");
     }
 
     if (path === "/oauth/token") {

@@ -58,7 +58,7 @@ jobs:
       - name: Connect card OAuth
         run: |
           node --test mcp/oauth.test.js
-          node --experimental-strip-types --test app/lib/oauth-return.test.ts
+          node --experimental-strip-types --test app/lib/oauth-return.test.ts app/lib/device-verify.test.ts
       - name: Build twice and compare file hashes
         env:
           NEXT_TELEMETRY_DISABLED: "1"
