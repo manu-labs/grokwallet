@@ -1,6 +1,6 @@
 # GrokWallet
 
-GrokWallet is a non-custodial Ethereum and Solana wallet for a [Grok Bot](https://grok.com) agent. The person who owns the wallets approves the agent once in a browser. After that, the agent can read balances, show receive addresses, send native ETH or SOL, and sign messages. The agent never receives a wallet private key, and it never receives a Privy app secret.
+GrokWallet is a non-custodial Ethereum and Solana wallet for a [Grok Bot](https://grok.com) agent. The person who owns the wallets approves the agent once in a browser. After that, the agent can read balances, show receive addresses, send native ETH or SOL, send an ERC-20, call a contract, sign messages, and sign EIP-712 typed data. The agent never receives a wallet private key, and it never receives a Privy app secret.
 
 Wallets are created on the owner's Privy account when they log in on the approval page. The publisher of this template cannot sign for those wallets.
 
@@ -24,7 +24,7 @@ sequenceDiagram
   CLI->>Privy: poll POST /api/oauth/v2/token
   Privy-->>CLI: access token and refresh token
   Note over CLI: tokens encrypted in ~/.grokwallet
-  Agent->>CLI: send-eth or send-sol, after a yes
+  Agent->>CLI: send or sign, after a yes
   CLI->>Privy: exchange token for an ephemeral signing key
   CLI->>Privy: signed POST .../wallets/{id}/rpc
 ```
@@ -54,7 +54,7 @@ Treat the machine that holds `~/.grokwallet` as able to spend, up to the cap and
 4. Fund the addresses the bot shows. Incoming transfers do not need the agent.
 5. The bot must show a summary and wait for an explicit yes before it sends or signs, unless you have set a standing rule inside the cap.
 
-The pinned install is release `v0.2.2`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
+The pinned install is release `v0.2.3`, checked with `SHA256SUMS`. Until that tag exists, the bot is supposed to stop and say so.
 
 ## Quickstart for someone running the CLI
 
@@ -65,9 +65,42 @@ node bot/bin/grokwallet.js login
 node bot/bin/grokwallet.js addresses
 node bot/bin/grokwallet.js balance
 node bot/bin/grokwallet.js cap set --eth 0.01 --sol 0.05
+node bot/bin/grokwallet.js cap set --token arbitrum:0xaf88d065e77c8cC2239327C5EDb3A432268e5831=100
 ```
 
-`login` writes the verification URL, the user code, and `connector_url` to stdout. The connector URL embeds only the public user code. Tokens are encrypted at rest. `send-eth`, `send-sol`, and `sign-message` refuse to run without `--yes`.
+`login` writes the verification URL, the user code, and `connector_url` to stdout. The connector URL embeds only the public user code. Tokens are encrypted at rest. `send-eth`, `send-erc20`, `send-sol`, `sign-message`, and `sign-typed-data` refuse to run without `--yes`.
+
+## Sends, signatures, and caps
+
+`balance` with no `--chain` still reads Ethereum, Base, and Solana. Pass `--chain arbitrum` or `--chain arbitrum-sepolia` to read those. The same names work on `send-eth` and `send-erc20`. Defaults are the public RPCs `https://arb1.arbitrum.io/rpc` and `https://sepolia-rollup.arbitrum.io/rpc`, overridable with `GROKWALLET_ARBITRUM_RPC` and `GROKWALLET_ARBITRUM_SEPOLIA_RPC`. Privy documents both chains for `eth_sendTransaction`.
+
+```sh
+node bot/bin/grokwallet.js send-eth --to 0x... --amount 0.01 --chain arbitrum --yes
+node bot/bin/grokwallet.js send-eth --to 0x... --amount 0 --data 0x... --chain arbitrum --yes
+node bot/bin/grokwallet.js send-erc20 --chain arbitrum --token 0xaf88d065e77c8cC2239327C5EDb3A432268e5831 --to 0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7 --amount 10 --yes
+node bot/bin/grokwallet.js sign-typed-data --chain ethereum --data @approve-agent.json --yes
+node bot/bin/grokwallet.js sign-message --chain ethereum --message-file registration.txt --yes
+node bot/bin/grokwallet.js sign-message --chain ethereum --message-file - --yes < registration.txt
+```
+
+The ERC-20 example is a USDC transfer to Hyperliquid's Arbitrum bridge. `send-erc20` calls `decimals()` on the token (and `symbol()` when the contract returns one) and encodes `transfer(address,uint256)`. Hyperliquid's own minimum deposit is not enforced here.
+
+Caps:
+
+| Action | What the cap checks |
+| --- | --- |
+| `send-eth`, including `--data` | Native ETH `value` against `cap set --eth`. `--amount 0` is allowed only when `--data` is set. If no ETH cap is set, the CLI still allows the send after `--yes`, which is the existing native-send behavior |
+| `send-erc20` | The human amount against `cap set --token chain:0xaddress=amount`, after reading `decimals()` from that contract. The command refuses when that chain and token have no cap. The same address on another chain is a different cap. A cap with more fractional digits than the token's decimals is refused |
+| `send-eth --data` whose selector is ERC-20 `transfer` (`0xa9059cbb`) or `transferFrom` (`0x23b872dd`) | Refused. Use `send-erc20` so the token cap applies |
+| Other `send-eth --data` calldata | Not covered by a token cap. The summary prints the selector, the byte length, and the data. Only the native ETH value is capped |
+| `send-sol` | Lamports against `cap set --sol` |
+| `sign-message`, `sign-typed-data` | No amount cap. Both print what will be signed and refuse without `--yes`. A typed-data signature can approve another key, such as a Hyperliquid agent |
+
+`cap policy` still prints Privy policy JSON for native ETH value and SOL only. Token caps are local to this CLI. Creating the Privy policy still needs the app secret.
+
+`sign-typed-data` reads inline JSON or `@path` (`@-` reads stdin). It forwards `types` unchanged, including a primary type such as `HyperliquidTransaction:ApproveAgent`, and does not insert `EIP712Domain`. `domain.chainId` may be a number or hex (`0x66eee` is 421614) and is not compared to Ethereum, Base, or Arbitrum. The summary prints that chain id, `verifyingContract`, `primaryType`, and the message before Privy runs `eth_signTypedData_v4`.
+
+`sign-message --message-file` signs the file's UTF-8 bytes exactly, including line breaks and a trailing newline if the file has one. `--message-file -` or `--message -` reads stdin the same way. That is what a multi-line Lighter key-registration message needs. `--message` and `--message-file` together are refused. The 2000-character limit is unchanged.
 
 ## Quickstart for the repo owner
 

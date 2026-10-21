@@ -1,6 +1,6 @@
 import { CliError } from "./redact.js";
 
-export function parseUnits(amount, decimals) {
+export function parseUnits(amount, decimals, { allowZero = false } = {}) {
   const text = String(amount).trim();
   if (!/^\d+(\.\d+)?$/.test(text)) {
     throw new CliError("amount must be a positive decimal such as 0.01");
@@ -11,7 +11,7 @@ export function parseUnits(amount, decimals) {
   }
   const base = 10n ** BigInt(decimals);
   const value = BigInt(whole) * base + BigInt((frac + "0".repeat(decimals)).slice(0, decimals));
-  if (value <= 0n) throw new CliError("amount must be greater than zero");
+  if (value < 0n || (value === 0n && !allowZero)) throw new CliError("amount must be greater than zero");
   return value;
 }
 
