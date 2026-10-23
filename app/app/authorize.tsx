@@ -38,6 +38,38 @@ function embeddedAddress(accounts: LinkedWallet[], chainType: string) {
   );
 }
 
+type IconName = "wallet" | "shield" | "chip" | "eye" | "signature" | "transfer" | "lock" | "code";
+
+function Icon({ name }: { name: IconName }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    wallet: <><path d="M20 8V6a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14v10H6a3 3 0 0 1-3-3V7" /><path d="M20 12h-5a2 2 0 0 0 0 4h5" /><path d="M16 14h.01" /></>,
+    shield: <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z" /><path d="m8 12 3 3 5-6" /></>,
+    chip: <><rect x="5" y="5" width="14" height="14" rx="3" /><path d="M9 5v14m6-14v14M5 10h4m6 4h4M9 12h6" /></>,
+    eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
+    signature: <><path d="m13 5 6 6M4 20l4-1 13-13a2.1 2.1 0 0 0-3-3L5 16l-1 4Zm9 0h7" /></>,
+    transfer: <><path d="M4 7h15l-3-3m3 3-3 3M20 17H5l3-3m-3 3 3 3" /></>,
+    lock: <><rect x="5" y="10" width="14" height="11" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></>,
+    code: <><path d="m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16" /></>,
+  };
+  return <svg className="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
+function Brand() {
+  return <a className="brand" href="/" aria-label="GrokWallet home"><span className="brand-icon" aria-hidden="true"><i /><i /></span>GrokWallet<span className="brand-dot">.</span></a>;
+}
+
+function Intro() {
+  return <section className="intro">
+    <h1>A crypto wallet<br />for your<br /><em>Grokbot.</em></h1>
+    <p className="intro-copy">Connect your wallet. Give your Grok bot the freedom to act — with you in control.</p>
+    <div className="wallet-art" aria-hidden="true">
+      <div className="wallet-art-top"><span className="brand-icon card-brand-icon"><i /><i /></span><span>GrokWallet</span><span className="wallet-chip"><Icon name="chip" /></span></div>
+      <div className="wallet-art-bottom"><span>YOURS. ALWAYS.</span><span>ETH <b>·</b> SOL</span></div>
+    </div>
+    <div className="ownership"><span><Icon name="shield" /></span><div><strong>Your keys stay with Privy.</strong><p>Your agent gets access. You keep ownership.</p></div></div>
+  </section>;
+}
+
 function Approval() {
   const params = useSearchParams();
   const userCode = params.get("user_code")?.trim() || "";
@@ -180,19 +212,23 @@ function Approval() {
 
   return (
     <main>
-      <header>
-        <h1>GrokWallet</h1>
-        <div className="mark">Approval</div>
-      </header>
+      <header><Brand /><a className="mark" href="https://www.privy.io/" target="_blank" rel="noopener noreferrer"><span /> Secured by Privy</a></header>
+      <div className="approval-layout">
+      <Intro />
+      <div className="approval-panel">
       <section className="card">
-        <h2>An agent wants to use your wallets</h2>
-        <p>
-          Approving lets that agent see your Ethereum and Solana addresses, request signatures, and send transactions
-          from wallets owned by your Privy account. The agent does not receive your password, this site&apos;s source
-          has no app secret, and the wallet private key stays inside Privy.
-        </p>
-        <p className="muted">Confirm the code below matches the code in your chat before you approve.</p>
-        {userCode ? <div className="code">{userCode}</div> : <p>No user code was in this link. Open the URL the agent printed.</p>}
+        <div className="card-heading"><span className="connection-icon"><Icon name="wallet" /></span><span className="network-badge">ETHEREUM + SOLANA</span></div>
+        <div className="eyebrow card-eyebrow">LET’S GET CONNECTED</div>
+        <h2>Meet your agent’s<br />new wallet.</h2>
+        <p className="muted card-copy">Sign in to connect the wallets on your Privy account to your Grok bot.</p>
+        <div className="permission-list">
+          <div><Icon name="eye" /><p>View your addresses & balances</p></div>
+          <div><Icon name="signature" /><p>Request signatures</p></div>
+          <div><Icon name="transfer" /><p>Send transactions from your wallets</p></div>
+        </div>
+        <div className="code-panel"><span className="field-label">VERIFICATION CODE</span>
+        {userCode ? <><div className="code">{userCode}</div><p className="muted">Make sure this matches the code in your chat.</p></> : <p className="muted">Open the connection link from your bot to get started.</p>}
+        </div>
         {hasConnectCard(params.get("oauth_return"), userCode) ? (
           <p className="muted">
             This window was opened by the Connect card. Log in and approve here. Privy is called from this window with
@@ -219,7 +255,7 @@ function Approval() {
                 }
               }}
             >
-              Log in with Privy
+              Continue with Privy <Icon name="lock" />
             </button>
           </div>
         ) : null}
@@ -242,8 +278,9 @@ function Approval() {
             </div>
           </>
         ) : null}
-        {message ? <p>{message}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
+        {message ? <p className="success" role="status">{message}</p> : null}
+        {error ? <p className="error" role="alert">{error}</p> : null}
+        <p className="card-footnote">Your private keys stay inside Privy.<br />Manage or revoke agent sessions after signing in.</p>
       </section>
       {authenticated ? (
         <section className="card">
@@ -269,9 +306,8 @@ function Approval() {
           ) : null}
         </section>
       ) : null}
-      <footer>
-        Build {process.env.NEXT_PUBLIC_BUILD_COMMIT || "local"}. This page only stores the public Privy app id.
-      </footer>
+      </div></div>
+      <footer><span>GrokWallet <span className="footer-slash">/</span> Built for a more capable agent.</span><a href="https://github.com/manu-labs/grokwallet" target="_blank" rel="noreferrer"><Icon name="code" /> Open source</a></footer>
     </main>
   );
 }
@@ -322,7 +358,7 @@ export function Authorize() {
           ethereum: { createOnLogin: "users-without-wallets" },
           solana: { createOnLogin: "users-without-wallets" },
         },
-        appearance: { theme: "light", accentColor: "#1d6b43" },
+        appearance: { theme: "dark", accentColor: "#10c77a" },
       }}
     >
       <Approval />

@@ -1,159 +1,17 @@
-:root {
-  color-scheme: light;
-  --ink: #1d1a16;
-  --muted: #5e574c;
-  --paper: #f3efe4;
-  --card: #fffdf8;
-  --line: #ddd4c4;
-  --good: #1d6b43;
-  --good-ink: #f4fff8;
-  --bad: #8d2e2a;
-  --bad-ink: #fff7f6;
-  --code: #f7f1e4;
-}
+:root{color-scheme:dark;--ink:#f1f3f1;--muted:#969c98;--paper:#080b09;--card:#111612;--line:#28312b;--good:#10c77a;--bad:#ff9696}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif}body{background-image:radial-gradient(ellipse at 75% 40%,#11201955,transparent 52%)}a{color:inherit;text-decoration:none}button,input{font:inherit}main{width:min(1160px,calc(100% - 96px));margin:auto}header{height:112px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff12}.brand{display:flex;align-items:center;font-size:24px;font-weight:650;letter-spacing:-1px}.brand-dot{color:var(--good)}.brand-icon{display:flex;align-items:flex-start;justify-content:center;gap:5px;width:35px;height:35px;border-radius:50%;background:var(--good);margin-right:11px;padding-top:8px;transform:rotate(-23deg)}.brand-icon i{width:5px;height:10px;background:#082317;border-radius:1px}.brand-icon i:last-child{height:7px}.mark{font-size:10px;letter-spacing:1.8px;color:#a2aaa5;display:flex;align-items:center;gap:8px}.mark span,.eyebrow>span{width:6px;height:6px;border-radius:50%;background:var(--good)}.approval-layout{display:grid;grid-template-columns:1.1fr 1fr;gap:90px;padding:66px 0 64px;align-items:start}.eyebrow{display:flex;align-items:center;gap:10px;font-size:10px;letter-spacing:2px;color:#a9b4ac;font-weight:600}.intro{padding-top:18px}h1{font-size:clamp(54px,5.3vw,76px);line-height:1.04;letter-spacing:-4.5px;font-weight:500;margin:27px 0 24px}h1 em{font-style:normal;color:var(--good)}p{line-height:1.6}.intro-copy{color:var(--muted);font-size:16px;max-width:330px;margin:0}.wallet-art{position:relative;overflow:hidden;max-width:320px;height:175px;border:1px solid #3c6650;border-radius:17px;margin:36px 0 26px;padding:24px;background:linear-gradient(125deg,#153d2a,#102019 55%,#14281c);box-shadow:0 22px 45px #0005;transform:rotate(-5deg)}.wallet-art:after{content:"";position:absolute;width:170px;height:170px;border:25px solid #2a795344;border-radius:50%;right:-25px;top:26px;box-shadow:0 0 0 24px #32634422}.wallet-art-top,.wallet-art-bottom{display:flex;align-items:center;gap:9px;position:relative;z-index:1}.wallet-art-top{font-size:14px;font-weight:600}.mini-mark{color:var(--good);font-size:25px}.wallet-chip{margin-left:auto;font-size:24px;color:#8cbaa0}.wallet-art-bottom{margin-top:65px;justify-content:space-between;font-size:8px;letter-spacing:1.7px;color:#aec8b6}.wallet-art-bottom b{color:var(--good);padding:0 5px}.ownership{display:flex;gap:12px;align-items:center;margin-top:32px}.ownership>span{border:1px solid #2d4536;border-radius:50%;width:30px;height:30px;display:grid;place-items:center;color:var(--good)}.ownership strong{font-size:12px;font-weight:500;color:#d6ded8}.ownership p{font-size:11px;color:var(--muted);margin:5px 0}.card{background:linear-gradient(130deg,#171e19,#101511);border:1px solid var(--line);border-radius:22px;padding:30px;box-shadow:0 24px 80px #0003}.card+.card{margin-top:20px}.card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:29px}.connection-icon{display:grid;place-items:center;width:44px;height:44px;border:1px solid #326044;background:#163222;border-radius:12px;color:var(--good);font-size:28px}.network-badge{font-size:8px;letter-spacing:1.3px;color:#b0beb3;border:1px solid #354139;border-radius:20px;padding:7px 10px}.card-eyebrow{font-size:9px;letter-spacing:1.6px;color:#899d8e;margin-bottom:13px}h2{font-size:32px;font-weight:500;line-height:1.14;letter-spacing:-1.2px;margin:0 0 14px}.muted{color:var(--muted)}.card-copy{font-size:13px;margin:0 0 20px;max-width:300px}.permission-list{margin:22px 0}.permission-list>div{display:flex;align-items:center;gap:12px;border-bottom:1px solid #ffffff0b;padding:12px 0}.permission-list span{font-family:monospace;font-size:10px;color:#6e8576}.permission-list p{font-size:12px;margin:0;color:#c6cec8}.permission-list b{margin-left:auto;color:#738a7b;font-weight:400}.code-panel{padding:17px;background:#090e0b;border:1px solid #26382b;border-radius:10px;margin-top:24px}.field-label{font-size:8px;letter-spacing:1.7px;color:#91a598;display:block}.code{font-family:ui-monospace,monospace;font-size:26px;letter-spacing:5px;color:#e2f5e9;margin-top:10px;overflow-wrap:anywhere}.code-panel p{font-size:10px;margin:8px 0 0}.row{display:flex;flex-wrap:wrap;gap:9px;margin-top:19px}button{border:1px solid #34453a;background:transparent;color:var(--ink);padding:13px 17px;border-radius:9px;cursor:pointer;transition:background .18s,transform .18s}button:hover{background:#23352a}button.primary{background:var(--good);border-color:var(--good);color:#032213;font-weight:600;flex:1;display:flex;align-items:center;justify-content:space-between;gap:20px;font-size:13px}button.primary:hover{background:#31db94;transform:translateY(-1px)}button.primary span{font-size:20px}button.danger{color:#ffb0b0;border-color:#61403e}button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,a:focus-visible{outline:2px solid #70f3b9;outline-offset:5px}.card-footnote{text-align:center;color:#829087;font-size:10px;margin:18px 0 0;line-height:1.7}.error{color:var(--bad);font-size:13px}.success{color:#73e7ad;font-size:13px}.wallets,.grants{list-style:none;padding:0;margin:16px 0}.wallets li,.grants li{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0;font-family:monospace;font-size:11px;overflow-wrap:anywhere}.wallets li span:last-child{min-width:0;text-align:right}.grants li span{min-width:0}footer{display:flex;justify-content:space-between;border-top:1px solid #ffffff12;padding:25px 0 30px;font-size:10px;color:#78867d}.footer-slash{margin:0 12px;color:#405247}footer a{color:#a8b8ad}footer a:hover{color:var(--good)}
+@media(min-width:1450px){.approval-layout{padding-top:85px;padding-bottom:85px}}@media(max-width:900px){main{width:calc(100% - 48px)}.approval-layout{gap:35px}h1{font-size:58px;letter-spacing:-3px}.card{padding:24px}.network-badge{font-size:7px}}@media(max-width:680px){main{width:calc(100% - 36px)}header{height:80px}.brand{font-size:21px}.mark{font-size:8px;letter-spacing:1px}.approval-layout{grid-template-columns:1fr;gap:30px;padding:30px 0}.intro{padding-top:0}h1{font-size:52px;margin:20px 0;letter-spacing:-2.8px}h1 br:nth-child(2){display:none}h1 em:before{content:" "}.intro-copy{font-size:14px;max-width:300px}.wallet-art,.ownership{display:none}.card{padding:26px}.card-heading{margin-bottom:24px}footer{gap:20px;font-size:9px;line-height:1.7}footer>a{white-space:nowrap}.footer-slash{margin:0 5px}}@media(prefers-reduced-motion:reduce){button{transition:none}}
 
-* {
-  box-sizing: border-box;
-}
+/* Consistent, purpose-specific interface iconography. */
+.ui-icon { width: 20px; height: 20px; flex-shrink: 0; display: block; }
+.connection-icon .ui-icon { width: 25px; height: 25px; }
+.wallet-chip .ui-icon { width: 28px; height: 28px; }
+.ownership .ui-icon { width: 17px; height: 17px; }
+.permission-list .ui-icon { width: 18px; height: 18px; color: #8ca997; }
+button.primary .ui-icon { width: 17px; height: 17px; }
+footer a { display: inline-flex; align-items: center; gap: 7px; }
+footer .ui-icon { width: 14px; height: 14px; }
 
-html,
-body {
-  margin: 0;
-  min-height: 100%;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-}
-
-body {
-  background-image: linear-gradient(180deg, rgba(29, 26, 22, 0.04), transparent 220px);
-}
-
-a {
-  color: inherit;
-}
-
-button,
-input {
-  font: inherit;
-}
-
-main {
-  width: min(720px, calc(100% - 32px));
-  margin: 40px auto 64px;
-}
-
-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: baseline;
-  border-bottom: 1px solid var(--ink);
-  padding-bottom: 12px;
-}
-
-h1 {
-  margin: 0;
-  font-family: Georgia, "Iowan Old Style", serif;
-  font-size: 40px;
-  font-weight: 500;
-  letter-spacing: -0.03em;
-}
-
-.mark {
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.card {
-  margin-top: 24px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  padding: 22px;
-}
-
-h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
-}
-
-p,
-li {
-  line-height: 1.5;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.code {
-  display: inline-block;
-  margin: 8px 0 0;
-  padding: 10px 14px;
-  background: var(--code);
-  border: 1px dashed var(--line);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: 22px;
-  letter-spacing: 0.08em;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-button {
-  border: 1px solid var(--ink);
-  background: transparent;
-  color: var(--ink);
-  padding: 10px 14px;
-  cursor: pointer;
-}
-
-button.primary {
-  background: var(--good);
-  border-color: var(--good);
-  color: var(--good-ink);
-}
-
-button.danger {
-  background: var(--bad);
-  border-color: var(--bad);
-  color: var(--bad-ink);
-}
-
-button:disabled {
-  opacity: 0.55;
-  cursor: wait;
-}
-
-.error {
-  color: var(--bad);
-}
-
-.wallets,
-.grants {
-  margin: 12px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.wallets li,
-.grants li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: 13px;
-}
-
-footer {
-  margin-top: 18px;
-  color: var(--muted);
-  font-size: 13px;
-}
+.wallet-art-top .card-brand-icon { width: 22px; height: 22px; margin-right: 0; padding-top: 5px; gap: 3px; flex-shrink: 0; }
+.card-brand-icon i { width: 3px; height: 7px; }
+.card-brand-icon i:last-child { height: 5px; }
