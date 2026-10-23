@@ -236,7 +236,10 @@ function Approval() {
           </p>
         ) : null}
         {!ready ? <p>Checking your Privy session.</p> : null}
-        {ready && !authenticated ? (
+        {!userCode ? (
+          <div className="row"><a className="bot-download" href="https://x.ai/bot/o_aMLkjm3gkA87OkasDGt" target="_blank" rel="noopener noreferrer">Download the bot</a></div>
+        ) : null}
+        {ready && !authenticated && userCode ? (
           <div className="row">
             <button
               className="primary"
