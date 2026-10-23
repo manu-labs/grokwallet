@@ -2,7 +2,7 @@
 # Install the pinned grokwallet CLI from a GitHub release and check SHA256SUMS.
 # Usage: install-bot.sh [tag] [dest]
 set -eu
-TAG=${1:-v0.2.5}
+TAG=${1:-v0.2.6}
 DEST=${2:-"$HOME/.grokwallet/cli"}
 REPO=${GROKWALLET_REPO:-manu-labs/grokwallet}
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
@@ -20,4 +20,4 @@ rm -rf "$DEST"
 mkdir -p "$DEST"
 tar -xzf grokwallet-bot.tar.gz -C "$DEST" --strip-components=1
 echo "installed ${TAG} to ${DEST}"
-echo "next: cd ${DEST} && npm ci --omit=dev"
+echo "next: cd ${DEST} && node bin/grokwallet.js verify"

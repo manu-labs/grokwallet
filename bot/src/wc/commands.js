@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { requireSession, requireYes, runWalletRpc, walletOf } from "../commands.js";
 import { CliError } from "../redact.js";
 import { ensureDaemon, ipcCall, wcPaths } from "./client.js";
 import { runDaemon } from "./daemon.js";
+import { openPasteServer } from "./paste.js";
 import { formatProposal, formatSession, planSessionApproval } from "./plan.js";
 import { formatRequest, prepareWcRequest } from "./request.js";
 import { assertPairingUri } from "./safety.js";
@@ -61,10 +63,69 @@ function rpcOutcome(record, action, rpcResult) {
   return { line: `submitted ${action.chainName} ${hash}\n`, result: hash };
 }
 
-async function pair(rest, flags, io) {
-  const uri = rest[1];
-  if (!uri) throw new CliError("missing WalletConnect URI");
+function readUriFile(path) {
+  let text;
+  try {
+    text = path === "-" ? readFileSync(0, "utf8") : readFileSync(path, "utf8");
+  } catch {
+    throw new CliError(
+      path === "-" ? "could not read the pairing URI from stdin" : `could not read ${path}`,
+      1,
+      "Write the URI to a file mode 0600 and pass wc pair --from-file, or use wc pair --paste.",
+    );
+  }
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  if (lines.length !== 1) {
+    throw new CliError(
+      "the pairing file must contain one WalletConnect URI",
+      1,
+      "Put the wc: URI on a single line and run wc pair --from-file again.",
+    );
+  }
+  return lines[0];
+}
+
+async function readPairUri(rest, flags, io) {
+  const positional = rest[1];
+  const fromFile = flags["from-file"];
+  if (flags.paste) {
+    if (positional || fromFile !== undefined) {
+      throw new CliError(
+        "wc pair --paste does not take a URI or --from-file",
+        1,
+        "Run wc pair --paste by itself.",
+      );
+    }
+    const page = await openPasteServer({ timeoutMs: timeoutMs(flags) });
+    io.stdout(`paste_url: ${page.url}\nOpen it on this machine, paste the pairing URI once, then the page closes.\n`);
+    return page.done;
+  }
+  if (fromFile !== undefined) {
+    if (fromFile === true) {
+      throw new CliError("missing --from-file path", 1, "Pass a path or - for stdin.");
+    }
+    if (positional) {
+      throw new CliError("pass a pairing URI or --from-file, not both", 1, "Drop one of them and run wc pair again.");
+    }
+    if (rest.length > 1) throw new CliError(`unexpected argument ${rest[1]}`);
+    return readUriFile(String(fromFile));
+  }
+  if (!positional) {
+    throw new CliError(
+      "missing WalletConnect URI",
+      1,
+      "Pass the URI, wc pair --from-file <path>, or wc pair --paste.",
+    );
+  }
   if (rest.length > 2) throw new CliError(`unexpected argument ${rest[2]}`);
+  return positional;
+}
+
+async function pair(rest, flags, io) {
+  const uri = await readPairUri(rest, flags, io);
   assertPairingUri(uri);
   const { wallet } = walletAddress(io);
   const record = await io.call({ op: "pair", uri, timeoutMs: timeoutMs(flags) });
@@ -106,8 +167,10 @@ async function rejectProposal(rest, io) {
 }
 
 async function requests(io) {
-  const { requests: pending, rejections } = await io.call({ op: "requests" });
+  const { requests: pending, rejections, expired } = await io.call({ op: "requests" });
   const lines = [];
+  if (expired?.requests) lines.push(`expired ${expired.requests} stale request(s)`);
+  if (expired?.proposals) lines.push(`expired ${expired.proposals} stale proposal(s)`);
   if (!pending.length) lines.push("pending: none");
   else lines.push(pending.map((record) => formatRequest(record)).join("\n\n"));
   if (rejections?.length) {
@@ -184,6 +247,13 @@ async function disconnect(rest, io) {
   io.stdout(`disconnected\n${formatSession(session)}\n`);
 }
 
+async function clear(io) {
+  const removed = await io.call({ op: "clear" });
+  io.stdout(
+    `cleared ${removed.sessions} session(s), ${removed.proposals} proposal(s), ${removed.requests} request(s)\n`,
+  );
+}
+
 export async function walletConnectCommand(rest, flags, deps = {}) {
   const io = {
     call: deps.call || liveCall,
@@ -220,12 +290,15 @@ export async function walletConnectCommand(rest, flags, deps = {}) {
     case "disconnect":
       await disconnect(rest, io);
       return;
+    case "clear":
+      await clear(io);
+      return;
     case "daemon":
       if (deps.call) throw new CliError("wc daemon is the relay process");
       return runDaemon();
     default:
       throw new CliError(
-        "wc command must be pair, proposals, approve-proposal, reject-proposal, requests, approve, reject, sessions, or disconnect",
+        "wc command must be pair, proposals, approve-proposal, reject-proposal, requests, approve, reject, sessions, disconnect, or clear",
       );
   }
 }

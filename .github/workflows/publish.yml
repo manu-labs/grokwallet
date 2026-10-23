@@ -76,11 +76,14 @@ jobs:
             echo "build output contains a private key" >&2
             exit 1
           fi
-          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
           tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
             -C app -czf dist/grokwallet-app.tar.gz out
+          (cd bot && npm ci --omit=dev)
+          find bot/node_modules -type d -name .cache -prune -exec rm -rf {} +
+          node scripts/pack-bot-manifest.mjs bot
           tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
-            --exclude=node_modules --exclude=.next \
+            --exclude=.next \
             -czf dist/grokwallet-bot.tar.gz bot
           (cd dist && sha256sum grokwallet-app.tar.gz grokwallet-bot.tar.gz approval-page.MANIFEST > SHA256SUMS)
           cat dist/SHA256SUMS
@@ -171,8 +174,14 @@ jobs:
           {
             echo ""
             echo "These files are the attested \`dist/site\` tree from \`grokwallet-app.tar.gz\`."
-            echo "Verify with \`gh attestation verify\` and \`node scripts/verify-site.mjs\`. See docs/VERIFY.md."
+            echo "\`grokwallet-bot.tar.gz\` includes production \`node_modules\`. After \`sha256sum -c\`, extract it and run \`node bin/grokwallet.js verify\`. No \`npm ci\` step."
+            echo "Verify the page with \`gh attestation verify\` and \`node scripts/verify-site.mjs\`. See docs/VERIFY.md."
           } >> dist/RELEASE_NOTES.md
+          node scripts/release-notes.mjs "${GITHUB_REF_NAME}" > dist/CHANGELOG_SECTION.md
+          if [ -s dist/CHANGELOG_SECTION.md ]; then
+            cat dist/CHANGELOG_SECTION.md dist/RELEASE_NOTES.md > dist/NOTES.md
+            mv dist/NOTES.md dist/RELEASE_NOTES.md
+          fi
       - name: GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

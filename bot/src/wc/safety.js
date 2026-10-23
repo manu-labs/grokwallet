@@ -138,10 +138,24 @@ export function effectiveVerify(eventContext, sessionVerify) {
   return sessionVerify || fromEvent;
 }
 
+export function verifyStatus(record) {
+  if (record?.origin?.mismatch) return "MISMATCH";
+  if (record?.verify?.validation === "VALID") return "VALID";
+  return "UNKNOWN";
+}
+
+export const PENDING_TTL_MS = 5 * 60 * 1000;
+
+export function pendingExpiry(event, now = Date.now()) {
+  const raw = Number(event?.expiry);
+  if (Number.isFinite(raw) && raw > 0) return raw > 100_000_000_000 ? raw : raw * 1000;
+  return now + PENDING_TTL_MS;
+}
+
 export function formatOrigin(record) {
   const origin = record.origin;
   const verify = record.verify;
-  const lines = [`origin: ${origin.domain}`, `verify: ${verify.validation}`];
+  const lines = [`origin: ${origin.domain}`, `verify: ${verifyStatus(record)}`];
   if (verify.origin) lines.push(`verified origin: ${verify.origin}`);
   lines.push(`claimed name (untrusted): ${record.claimedName || "(absent)"}`);
   lines.push(`claimed url (untrusted): ${record.claimedUrl || "(absent)"}`);

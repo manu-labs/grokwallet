@@ -26,6 +26,7 @@ import {
   originReport,
   parseHexChainId,
   payloadHash,
+  pendingExpiry,
   sameAddress,
 } from "./safety.js";
 
@@ -68,6 +69,7 @@ export function freezeRequest(event, session) {
     origin: originReport(verify, claimedUrl),
     sessionChains: session.chains.slice(),
     sessionAccounts: session.accounts.slice(),
+    expiresAt: pendingExpiry(event),
   };
   record.payloadHash = payloadHash({
     id: record.id,
@@ -86,15 +88,53 @@ export function freezeRequest(event, session) {
   return record;
 }
 
+function clip(value, limit = 180) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}...`;
+}
+
+export function previewRequest(record) {
+  try {
+    if (record.method === "personal_sign") {
+      const params = Array.isArray(record.params) ? record.params : [];
+      const message = params.find((item) => typeof item === "string" && !isAddress(item)) || "";
+      return `sign message: ${clip(message)}`;
+    }
+    if (record.method === "eth_signTypedData_v4") {
+      const params = Array.isArray(record.params) ? record.params : [];
+      const raw = params.find((item) => item && typeof item === "object") || params.find((item) => typeof item === "string" && item.startsWith("{"));
+      const typed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const primary = typed?.primaryType || typed?.primary_type || "(missing primary type)";
+      return `sign typed data ${primary}`;
+    }
+    if (record.method === "eth_sendTransaction") {
+      const tx = Array.isArray(record.params) ? record.params[0] : null;
+      const to = tx?.to || "(missing recipient)";
+      const value = tx?.value || "0x0";
+      return `send transaction to ${to} value ${value}`;
+    }
+    if (record.method === "wallet_sendCalls") {
+      const batch = Array.isArray(record.params) ? record.params[0] : null;
+      const count = Array.isArray(batch?.calls) ? batch.calls.length : 0;
+      return `send ${count} call${count === 1 ? "" : "s"}`;
+    }
+    return `read method ${record.method}`;
+  } catch {
+    return "could not decode the payload";
+  }
+}
+
 export function formatRequest(record) {
   const chain = chainByCaip2(record.chainId);
   const chainText = chain ? `${record.chainId} (${chain.name})` : record.chainId;
   return [
     formatOrigin(record),
-    `request: ${record.id}`,
-    `topic: ${record.topic}`,
     `chain: ${chainText}`,
     `method: ${record.method}`,
+    `summary: ${previewRequest(record)}`,
+    `request: ${record.id}`,
+    `topic: ${record.topic}`,
     "payload:",
     JSON.stringify(record.params, null, 2),
   ].join("\n");
