@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The template setup now shows the match code in chat.
+
 ## 0.2.7
 
 - The approval page favicon now matches the header logo. The CLI is unchanged.

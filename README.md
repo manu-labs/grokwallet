@@ -32,7 +32,7 @@ node bin/grokwallet.js send-eth --to 0x... --amount 0.01 --chain ethereum --dry-
 node bin/grokwallet.js send-eth --to 0x... --amount 0.01 --chain ethereum --yes
 ```
 
-`login` prints a verification URL, a user code, and a connector URL. Approve in the Connect card, or open the page, check the code, and press Approve. `doctor` prints one line for each check and a `fix:` line when something is wrong. `--dry-run` prints the summary and the cap result, and it does not sign or broadcast.
+`login` prints a verification URL, a user code, and a connector URL. The setup skill shows that short user code in chat so the owner can match it on the approval page. The device code, tokens, and the approval link stay out of chat. Approve in the Connect card, or open the page, check the code, and press Approve. `doctor` prints one line for each check and a `fix:` line when something is wrong. `--dry-run` prints the summary and the cap result, and it does not sign or broadcast.
 
 A source checkout is different from a release. From a git tree, install with `cd bot && npm ci` and run `node bin/grokwallet.js`. `verify` reports that a git checkout has no release manifest.
 

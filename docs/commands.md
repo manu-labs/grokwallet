@@ -46,7 +46,7 @@ On failure the first line names the changed or missing path. The second line say
 
 ## grokwallet login
 
-Starts the Privy device flow. Stdout is the verification URL, the user code, and `connector_url`. The device code stays inside the process.
+Starts the Privy device flow. Stdout is the verification URL, the user code, and `connector_url`. The setup skill shows that short user code in chat for matching. The device code and tokens stay inside the process and are never shown.
 
 ```sh
 export GROKWALLET_PASSPHRASE="the masked secret"
