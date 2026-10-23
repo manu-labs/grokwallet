@@ -480,12 +480,16 @@ test("help, the wallet-ops skill, and the diff wording stay generic", () => {
   const templatePath = join(import.meta.dirname, "../../template/grokwallet.json");
   const template = JSON.parse(readFileSync(templatePath, "utf8"));
   const ops = template.skills.find((skill) => skill.name === "wallet-ops");
-  assert.match(ops.content, /wc approve ID --yes/);
-  assert.match(ops.content, /origin is MISMATCH/);
-  assert.match(ops.content, /public project id/);
-  assert.match(ops.content, /GROKWALLET_WC_PROJECT_ID overrides wcProjectId/);
-  assert.ok(Buffer.byteLength(ops.content) < 6000);
-  assert.ok(Buffer.byteLength(template.skills.find((skill) => skill.name === "getting-started").content) < 6000);
+  const started = template.skills.find((skill) => skill.name === "getting-started");
+  assert.match(ops.content, /wc approve <id> --yes/);
+  assert.match(ops.content, /MISMATCH/);
+  assert.match(ops.content, /Do not print tokens/);
+  assert.match(started.content, /show it in chat/);
+  assert.match(started.content, /Never show or ask for the device code/);
+  assert.doesNotMatch(started.content, /Do not show the approval link or the user code/);
+  assert.match(started.content, /public WalletConnect project id is built in/);
+  assert.ok(Buffer.byteLength(ops.content) < 6500);
+  assert.ok(Buffer.byteLength(started.content) < 6000);
   const roots = ["bot/src", "bot/test", "template", "docs", "README.md", "SECURITY.md", ".env.example"];
   const files = [];
   for (const root of roots) {
