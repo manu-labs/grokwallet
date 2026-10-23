@@ -175,7 +175,7 @@ test("verify checks the bundled manifest and --version prints the package versio
   } finally {
     process.stdout.write = original;
   }
-  assert.match(chunks.join(""), /^0\.2\.6\n$/);
+  assert.match(chunks.join(""), /^0\.2\.7\n$/);
 });
 
 test("dry-run prints the cap result and does not sign", async () => {
@@ -378,5 +378,7 @@ test("changelog section is selected by version", () => {
   assert.equal(changelogSection(markdown, "main"), "");
   const file = readFileSync(join(import.meta.dirname, "../../CHANGELOG.md"), "utf8");
   assert.match(changelogSection(file, "0.2.6"), /production dependencies/);
+  assert.match(changelogSection(file, "0.2.7"), /favicon now matches the header logo/);
+  assert.match(changelogSection(file, "0.2.7"), /CLI is unchanged/);
   assert.match(changelogSection(file, "0.2.2"), /device_verify/);
 });

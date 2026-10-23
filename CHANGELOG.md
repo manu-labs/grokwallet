@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.7
+
+- The approval page favicon now matches the header logo. The CLI is unchanged.
+
 ## 0.2.6
 
 - The bot release tarball includes production dependencies. After checking `SHA256SUMS`, extract it and run `node bin/grokwallet.js`. No `npm ci` step.

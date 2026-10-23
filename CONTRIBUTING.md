@@ -35,11 +35,11 @@ Publish (`.github/workflows/publish.yml`) runs when a tag matching `v*` is pushe
 1. Bump the version in `bot/package.json`, the root `version` fields in `bot/package-lock.json`, `functions/_lib/_server.js`, `scripts/install-bot.sh`, the template skills, `README.md`, and `docs/HOSTING.md`.
 2. Add a `CHANGELOG.md` section for that version. The release body starts with that section.
 3. Merge to `main`.
-4. Tag that commit. Do not move `v0.2.2`, `v0.2.3`, `v0.2.4`, or `v0.2.5`.
+4. Tag that commit. Do not move `v0.2.2`, `v0.2.3`, `v0.2.4`, `v0.2.5`, or `v0.2.6`.
 
 ```sh
-git tag -a v0.2.6 <merge-sha> -m "GrokWallet 0.2.6"
-git push origin v0.2.6
+git tag -a v0.2.7 <merge-sha> -m "GrokWallet 0.2.7"
+git push origin v0.2.7
 ```
 
 The workflow installs production dependencies, writes `bot/SHA256SUMS` for those files, and packs `dist/grokwallet-bot.tar.gz` with GNU tar `--sort=name`, a source-date mtime, and numeric root ownership. `dist/SHA256SUMS` covers `grokwallet-app.tar.gz`, `grokwallet-bot.tar.gz`, and `approval-page.MANIFEST`. A tag push also opens the GitHub release. `workflow_dispatch` deploys the page and builds the archives, and it does not open the release.
