@@ -8,6 +8,7 @@ import {
   formatOrigin,
   originReport,
   payloadHash,
+  pendingExpiry,
 } from "./safety.js";
 
 const ALLOWED_EVENTS = new Set(["chainChanged", "accountsChanged"]);
@@ -80,6 +81,7 @@ export function freezeProposal(event) {
     required,
     optional,
   });
+  record.expiresAt = pendingExpiry(event);
   return record;
 }
 

@@ -473,8 +473,8 @@ test("project id defaults to the public id, then config, then env", () => {
 });
 
 test("help, the wallet-ops skill, and the diff wording stay generic", () => {
-  assert.match(HELP, /wc pair <wc-uri>/);
-  assert.match(HELP, /wc approve <id> --yes/);
+  assert.match(HELP, /wc pair \(<wc-uri>/);
+  assert.match(HELP, /wc approve <id> \[--dry-run\] --yes/);
   assert.match(HELP, /dashboard\.reown\.com/);
   assert.match(HELP, /public WalletConnect project id is built in/);
   const templatePath = join(import.meta.dirname, "../../template/grokwallet.json");

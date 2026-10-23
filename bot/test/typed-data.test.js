@@ -142,7 +142,7 @@ test("sign-typed-data prints the summary before any Privy call and refuses witho
 });
 
 test("help lists typed data, erc20, and arbitrum", () => {
-  assert.match(HELP, /sign-typed-data --chain ethereum --data <json\|@file> --yes/);
+  assert.match(HELP, /sign-typed-data --chain ethereum --data <json\|@file> \[--dry-run\] --yes/);
   assert.match(HELP, /send-erc20/);
   assert.match(HELP, /arbitrum-sepolia/);
   assert.match(HELP, /--message-file/);

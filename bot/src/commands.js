@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { CliError } from "./redact.js";
+import { CliError, DryRun } from "./redact.js";
 import { loadSession, requireAppId, resolveAppId, saveSession, deleteSession, writeConfig } from "./session.js";
 import {
   authenticateWallets,
@@ -29,7 +29,9 @@ import {
   encodeErc20Transfer,
   erc20SpendSelector,
   normalizeCalldata,
+  readErc20Balance,
   readErc20Decimals,
+  readErc20Name,
   readErc20Symbol,
   requireAddress,
   summarizeErc20,
@@ -221,27 +223,80 @@ export async function addresses() {
   printWallets(session.wallets);
 }
 
-export async function balance(flags) {
+async function writeTokenBalance(chain, wallet, token, fetchImpl) {
+  let raw;
+  try {
+    raw = await readErc20Balance(chain.rpc, token, wallet, fetchImpl);
+  } catch {
+    process.stdout.write(`${chain.name} ${wallet} token ${token} balance unavailable\n`);
+    return;
+  }
+  let decimals = 0;
+  try {
+    decimals = await readErc20Decimals(chain.rpc, token, fetchImpl);
+  } catch {
+    decimals = null;
+  }
+  const symbol = decimals == null ? null : await readErc20Symbol(chain.rpc, token, fetchImpl);
+  const name = decimals == null ? null : await readErc20Name(chain.rpc, token, fetchImpl);
+  const amount = decimals == null ? raw.toString() : formatUnits(raw, decimals);
+  const symbolText = symbol || "symbol unavailable";
+  const nameText = name || "name unavailable";
+  process.stdout.write(`${chain.name} ${wallet} ${amount} ${symbolText} (${nameText}) token ${token}\n`);
+}
+
+export async function balance(flags, fetchImpl = fetch) {
   const session = requireSession();
+  if (flags.token) {
+    const chain = chainConfig(flags.chain ? String(flags.chain) : "ethereum");
+    if (chain.kind !== "evm") {
+      throw new CliError(
+        "token balances are EVM only",
+        1,
+        "Pass --chain ethereum, base, arbitrum, or arbitrum-sepolia with --token.",
+      );
+    }
+    const wallet = walletOf(session, "ethereum");
+    await writeTokenBalance(chain, wallet.address, requireAddress(flags.token, "token"), fetchImpl);
+    return;
+  }
   const names = flags.chain ? [String(flags.chain)] : ["ethereum", "base", "solana"];
   for (const name of names) {
     const chain = chainConfig(name);
     if (chain.kind === "evm") {
       const wallet = walletOf(session, "ethereum");
-      const wei = await ethBalance(wallet.address, chain.rpc);
+      const wei = await ethBalance(wallet.address, chain.rpc, fetchImpl);
       process.stdout.write(`${name} ${wallet.address} ${formatUnits(wei, ETH_DECIMALS)} ETH\n`);
     } else {
       const wallet = walletOf(session, "solana");
-      const lamports = await solBalance(wallet.address, chain.rpc);
+      const lamports = await solBalance(wallet.address, chain.rpc, fetchImpl);
       process.stdout.write(`${name} ${wallet.address} ${formatUnits(lamports, SOL_DECIMALS)} SOL\n`);
     }
+  }
+  const tokens = Object.keys(normalizeCaps(session.caps).tokens).sort();
+  for (const key of tokens) {
+    const split = key.indexOf(":");
+    const chainName = key.slice(0, split);
+    const token = key.slice(split + 1);
+    if (flags.chain && chainName !== String(flags.chain)) continue;
+    const chain = chainConfig(chainName);
+    const wallet = walletOf(session, "ethereum");
+    await writeTokenBalance(chain, wallet.address, token, fetchImpl);
   }
 }
 
 export function requireYes(flags, summary) {
   process.stdout.write(`${summary}\n`);
+  if (flags["dry-run"]) {
+    process.stdout.write("dry-run: nothing was signed or broadcast\n");
+    throw new DryRun();
+  }
   if (!flags.yes) {
-    throw new CliError("refusing without --yes. Show this summary in chat and wait for an explicit yes.", 2);
+    throw new CliError(
+      "refusing without --yes",
+      2,
+      "Show this summary in chat and wait for an explicit yes, then run the command again with --yes.",
+    );
   }
 }
 
@@ -519,24 +574,29 @@ export const HELP = `grokwallet commands:
   login
   status
   addresses
-  balance [--chain ${balanceChains}]
-  send-eth --to 0x... --amount 0.01 [--chain ${evmChains}] [--data 0x...] --yes
-  send-erc20 --chain ${evmChains} --token 0x... --to 0x... --amount 10 --yes
-  send-sol --to <address> --amount 0.01 --yes
-  sign-message --chain ethereum|solana (--message <text> | --message-file <path|->) --yes
-  sign-typed-data --chain ethereum --data <json|@file> --yes
+  balance [--chain ${balanceChains}] [--token 0x...]
+  send-eth --to 0x... --amount 0.01 [--chain ${evmChains}] [--data 0x...] [--dry-run] --yes
+  send-erc20 --chain ${evmChains} --token 0x... --to 0x... --amount 10 [--dry-run] --yes
+  send-sol --to <address> --amount 0.01 [--dry-run] --yes
+  sign-message --chain ethereum|solana (--message <text> | --message-file <path|->) [--dry-run] --yes
+  sign-typed-data --chain ethereum --data <json|@file> [--dry-run] --yes
   cap show|set|clear|policy [--eth 0.01] [--sol 0.01] [--token chain:0xaddress=amount]
-  wc pair <wc-uri> [--timeout 30]
+  wc pair (<wc-uri> | --from-file <path|-> | --paste) [--timeout 30]
   wc proposals
   wc approve-proposal <id> --yes
   wc reject-proposal <id>
   wc requests
-  wc approve <id> --yes
+  wc approve <id> [--dry-run] --yes
   wc reject <id>
   wc sessions
   wc disconnect <topic>
+  wc clear
+  doctor
+  verify
   logout
 
+--version prints the package version.
+--dry-run prints the summary and runs the cap checks, then stops before any signature or broadcast.
 send-eth checks native ETH value against the ETH cap. --amount 0 is allowed only with --data.
 send-erc20 reads token decimals from the contract and refuses unless a cap is set for that chain and token.
 An ERC-20 transfer or transferFrom in send-eth --data is refused; use send-erc20.

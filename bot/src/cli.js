@@ -13,6 +13,8 @@ import {
   signTypedData,
   status,
 } from "./commands.js";
+import { doctor } from "./doctor.js";
+import { packageVersion, verifyInstall } from "./verify.js";
 import { walletConnectCommand } from "./wc/commands.js";
 
 export function parseArgs(argv) {
@@ -55,6 +57,10 @@ function setFlag(flags, key, value) {
 
 export async function main(argv) {
   const { command, rest, flags } = parseArgs(argv);
+  if (!command && flags.version) {
+    process.stdout.write(`${packageVersion()}\n`);
+    return 0;
+  }
   if (!command || command === "help" || flags.help) {
     process.stdout.write(HELP);
     return 0;
@@ -94,6 +100,11 @@ export async function main(argv) {
       return (await walletConnectCommand(rest, flags)) || 0;
     case "logout":
       logout();
+      return 0;
+    case "doctor":
+      return doctor();
+    case "verify":
+      process.stdout.write(`verified ${verifyInstall()} file(s)\n`);
       return 0;
     default:
       throw new CliError(`unknown command ${command}`);

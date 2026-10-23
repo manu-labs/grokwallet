@@ -1,5 +1,7 @@
 # Security
 
+The threat model, spend caps, on-disk layout, and revoke steps are in [docs/security.md](docs/security.md). This file keeps the approval-page header policy and the Connect-card rules.
+
 GrokWallet is a non-custodial agent wallet. A bug in the CLI, the approval page, or the bot template can move funds or sign a message the owner did not intend.
 
 ## Report a vulnerability

@@ -6,6 +6,8 @@ export const TRANSFER_SELECTOR = "a9059cbb";
 export const TRANSFER_FROM_SELECTOR = "23b872dd";
 const DECIMALS_DATA = "0x313ce567";
 const SYMBOL_DATA = "0x95d89b41";
+const NAME_DATA = "0x06fdde03";
+const BALANCE_OF_SELECTOR = "70a08231";
 const MAX_CALLDATA_BYTES = 16384;
 
 export function requireAddress(value, label) {
@@ -170,4 +172,23 @@ export async function readErc20Symbol(rpc, token, fetchImpl = fetch) {
   } catch {
     return null;
   }
+}
+
+export async function readErc20Name(rpc, token, fetchImpl = fetch) {
+  try {
+    const result = await ethCall(rpc, token, NAME_DATA, fetchImpl);
+    return decodeAbiString(result);
+  } catch {
+    return null;
+  }
+}
+
+export function encodeBalanceOf(address) {
+  const word = requireAddress(address, "wallet").slice(2).toLowerCase().padStart(64, "0");
+  return `0x${BALANCE_OF_SELECTOR}${word}`;
+}
+
+export async function readErc20Balance(rpc, token, wallet, fetchImpl = fetch) {
+  const result = await ethCall(rpc, token, encodeBalanceOf(wallet), fetchImpl);
+  return decodeUint256(result);
 }

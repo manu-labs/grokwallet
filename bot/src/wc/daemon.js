@@ -208,11 +208,29 @@ export class WalletDaemon {
     this.save();
   }
 
+  sweep() {
+    const now = Date.now();
+    const requests = this.state.requests.filter((item) => item.expiresAt && item.expiresAt > now);
+    const proposals = this.state.proposals.filter((item) => item.expiresAt && item.expiresAt > now);
+    const dropped = {
+      requests: this.state.requests.length - requests.length,
+      proposals: this.state.proposals.length - proposals.length,
+    };
+    if (dropped.requests || dropped.proposals) {
+      this.state.requests = requests;
+      this.state.proposals = proposals;
+      this.save();
+    }
+    return dropped;
+  }
+
   findProposal(id) {
+    this.sweep();
     return findById(this.state.proposals, id, "proposal");
   }
 
   findRequest(key) {
+    this.sweep();
     return findById(this.state.requests, key, "request");
   }
 
@@ -308,7 +326,30 @@ export class WalletDaemon {
     return copy;
   }
 
+  async clear() {
+    const topics = this.state.sessions.map((item) => item.topic);
+    const removed = {
+      sessions: topics.length,
+      proposals: this.state.proposals.length,
+      requests: this.state.requests.length,
+    };
+    for (const topic of topics) {
+      try {
+        await this.client.disconnect({ topic, reason: USER_DISCONNECTED });
+      } catch {
+        // Drop the local session even if the relay is already gone.
+      }
+    }
+    this.state.sessions = [];
+    this.state.proposals = [];
+    this.state.requests = [];
+    this.state.rejections = [];
+    this.save();
+    return removed;
+  }
+
   async handle(message) {
+    const expired = message?.op === "ping" ? { requests: 0, proposals: 0 } : this.sweep();
     switch (message?.op) {
       case "ping":
         return { ok: true };
@@ -323,7 +364,9 @@ export class WalletDaemon {
       case "rejectProposal":
         return this.rejectProposal(message.id);
       case "requests":
-        return { requests: this.state.requests, rejections: this.state.rejections };
+        return { requests: this.state.requests, rejections: this.state.rejections, expired };
+      case "clear":
+        return this.clear();
       case "getRequest":
         return this.findRequest(message.key);
       case "respond":
