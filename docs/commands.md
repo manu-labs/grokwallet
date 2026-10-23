@@ -15,7 +15,7 @@ From a git checkout the path is `node bot/bin/grokwallet.js`. Flags below are th
 Prints the package version and exits.
 
 ```text
-0.2.6
+0.2.7
 ```
 
 ## grokwallet doctor

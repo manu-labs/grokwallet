@@ -8,11 +8,11 @@ The public Privy app id shipped with this repo is `cmvh5kyg300qy0gl01ww23ixy`. T
 
 ## Five-minute quickstart
 
-The pinned release is `v0.2.6`. If that GitHub release does not exist yet, stop.
+The pinned release is `v0.2.7`. If that GitHub release does not exist yet, stop.
 
 ```sh
-curl -fsSL -o grokwallet-bot.tar.gz https://github.com/manu-labs/grokwallet/releases/download/v0.2.6/grokwallet-bot.tar.gz
-curl -fsSL -o SHA256SUMS https://github.com/manu-labs/grokwallet/releases/download/v0.2.6/SHA256SUMS
+curl -fsSL -o grokwallet-bot.tar.gz https://github.com/manu-labs/grokwallet/releases/download/v0.2.7/grokwallet-bot.tar.gz
+curl -fsSL -o SHA256SUMS https://github.com/manu-labs/grokwallet/releases/download/v0.2.7/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 tar -xzf grokwallet-bot.tar.gz
 cd grokwallet-bot
@@ -53,7 +53,7 @@ A source checkout is different from a release. From a git tree, install with `cd
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Doctor output, RPC, login expiry, checksum failures |
 | [docs/HOSTING.md](docs/HOSTING.md) | What the repo owner configures |
 | [docs/PRIVY.md](docs/PRIVY.md) | Privy calls this repo makes |
-| [CHANGELOG.md](CHANGELOG.md) | v0.2.2 through v0.2.6 |
+| [CHANGELOG.md](CHANGELOG.md) | v0.2.2 through v0.2.7 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Local dev, tests, and the release tag |
 
 The bot template is [`template/grokwallet.json`](template/grokwallet.json). The approval page is `https://grokwallet.fun/`.
